@@ -1,0 +1,399 @@
+{
+  "name": "mqexplorer",
+  "displayName": "MQExplorer",
+  "description": "A VS Code extension for browsing and managing message queues across multiple providers",
+  "version": "0.0.1",
+  "publisher": "praxai",
+   "repository": {
+    "type": "git",
+    "url": "https://github.com/spockstein/mqexplorer.git"
+  },
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Machine Learning",
+    "Education", 
+    "Other"
+  ],
+  "keywords": [
+    "Message Queues",
+    "Developer Tools",
+    "Messaging",
+    "IBM MQ",
+    "RabbitMQ",
+    "Kafka",
+    "ActiveMQ",
+    "Azure Service Bus",
+    "AWS SQS",
+    "Message Queue Management",
+    "Message Queue Browser",
+    "Message Queue Administration",
+    "Message Queue Explorer",
+    "Message Queue Monitoring",
+    "Message Queue Testing",
+    "Message Queue Debugging",
+    "Message Queue Troubleshooting",
+    "Message Queue Optimization",
+    "Message Queue Security",
+    "Education",
+    "Developer Tools"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "mqexplorer.helloWorld",
+        "title": "Hello World"
+      },
+      {
+        "command": "mqexplorer.testBrowseMessages",
+        "title": "MQExplorer: Test Browse Messages"
+      },
+      {
+        "command": "mqexplorer.testMQFunctionality",
+        "title": "MQExplorer: Test MQ Functionality"
+      },
+      {
+        "command": "mqexplorer.testMQOperations",
+        "title": "MQExplorer: Test MQ Operations (Put/Delete)"
+      },
+      {
+        "command": "mqexplorer.testQueueDepth",
+        "title": "MQExplorer: Test Queue Depth Display"
+      },
+      {
+        "command": "mqexplorer.testRabbitMQOperations",
+        "title": "MQExplorer: Test RabbitMQ Operations"
+      },
+      {
+        "command": "mqexplorer.testKafkaOperations",
+        "title": "MQExplorer: Test Kafka Operations"
+      },
+      {
+        "command": "mqexplorer.testActiveMQOperations",
+        "title": "MQExplorer: Test ActiveMQ Operations"
+      },
+      {
+        "command": "mqexplorer.testAzureServiceBusOperations",
+        "title": "MQExplorer: Test Azure Service Bus Operations"
+      },
+      {
+        "command": "mqexplorer.testAWSSQSOperations",
+        "title": "MQExplorer: Test AWS SQS Operations"
+      },
+      {
+        "command": "mqexplorer.addConnectionProfile",
+        "title": "MQExplorer: Add Connection Profile",
+        "icon": "$(add)"
+      },
+      {
+        "command": "mqexplorer.editConnectionProfile",
+        "title": "Edit Connection Profile",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "mqexplorer.deleteConnectionProfile",
+        "title": "Delete Connection Profile",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "mqexplorer.connect",
+        "title": "Connect",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "mqexplorer.disconnect",
+        "title": "Disconnect",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "mqexplorer.refreshQueues",
+        "title": "Refresh Queues",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mqexplorer.refreshTopics",
+        "title": "Refresh Topics",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mqexplorer.refreshChannels",
+        "title": "Refresh Channels",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mqexplorer.browseMessages",
+        "title": "Browse Messages",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "mqexplorer.putMessage",
+        "title": "Put Message",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "mqexplorer.publishMessage",
+        "title": "Publish Message",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "mqexplorer.clearQueue",
+        "title": "Clear Queue",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mqexplorer.viewQueueProperties",
+        "title": "View Queue Properties",
+        "icon": "$(info)"
+      },
+      {
+        "command": "mqexplorer.viewTopicProperties",
+        "title": "View Topic Properties",
+        "icon": "$(info)"
+      },
+      {
+        "command": "mqexplorer.viewChannelProperties",
+        "title": "View Channel Properties",
+        "icon": "$(info)"
+      },
+      {
+        "command": "mqexplorer.startChannel",
+        "title": "Start Channel",
+        "icon": "$(play)"
+      },
+      {
+        "command": "mqexplorer.stopChannel",
+        "title": "Stop Channel",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "mqexplorer.refreshTreeView",
+        "title": "Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "mqexplorer.searchFilter",
+        "title": "Search/Filter",
+        "icon": "$(search)"
+      },
+      {
+        "command": "mqexplorer.clearFilter",
+        "title": "Clear Filter",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "mqexplorer.openCommandPalette",
+        "title": "MQExplorer: Open Command Palette"
+      },
+      {
+        "command": "mqexplorer.exportConnectionProfiles",
+        "title": "MQExplorer: Export Connection Profiles",
+        "icon": "$(export)"
+      },
+      {
+        "command": "mqexplorer.importConnectionProfiles",
+        "title": "MQExplorer: Import Connection Profiles",
+        "icon": "$(import)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "mqexplorer-container",
+          "title": "MQ Explorer",
+          "icon": "$(database)"
+        }
+      ]
+    },
+    "views": {
+      "mqexplorer-container": [
+        {
+          "id": "mqexplorer",
+          "name": "Connections",
+          "description": "Manage your messaging connections",
+          "icon": "$(database)"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "mqexplorer.addConnectionProfile",
+          "when": "view == mqexplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "mqexplorer.refreshTreeView",
+          "when": "view == mqexplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "mqexplorer.searchFilter",
+          "when": "view == mqexplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "mqexplorer.clearFilter",
+          "when": "view == mqexplorer",
+          "group": "navigation"
+        },
+        {
+          "command": "mqexplorer.exportConnectionProfiles",
+          "when": "view == mqexplorer",
+          "group": "1_profiles"
+        },
+        {
+          "command": "mqexplorer.importConnectionProfiles",
+          "when": "view == mqexplorer",
+          "group": "1_profiles"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "mqexplorer.connect",
+          "when": "view == mqexplorer && viewItem == disconnectedProfile",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.disconnect",
+          "when": "view == mqexplorer && viewItem == connectedProfile",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.editConnectionProfile",
+          "when": "view == mqexplorer && (viewItem == connectedProfile || viewItem == disconnectedProfile)",
+          "group": "1_modification"
+        },
+        {
+          "command": "mqexplorer.deleteConnectionProfile",
+          "when": "view == mqexplorer && (viewItem == connectedProfile || viewItem == disconnectedProfile)",
+          "group": "1_modification"
+        },
+        {
+          "command": "mqexplorer.refreshQueues",
+          "when": "view == mqexplorer && viewItem == queuesFolder",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.refreshTopics",
+          "when": "view == mqexplorer && viewItem == topicsFolder",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.refreshChannels",
+          "when": "view == mqexplorer && viewItem == channelsFolder",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.browseMessages",
+          "when": "view == mqexplorer && viewItem == queue",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.putMessage",
+          "when": "view == mqexplorer && viewItem == queue",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.publishMessage",
+          "when": "view == mqexplorer && viewItem == topic",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.clearQueue",
+          "when": "view == mqexplorer && viewItem == queue",
+          "group": "1_modification"
+        },
+        {
+          "command": "mqexplorer.viewQueueProperties",
+          "when": "view == mqexplorer && viewItem == queue",
+          "group": "1_modification"
+        },
+        {
+          "command": "mqexplorer.viewTopicProperties",
+          "when": "view == mqexplorer && viewItem == topic",
+          "group": "1_modification"
+        },
+        {
+          "command": "mqexplorer.viewChannelProperties",
+          "when": "view == mqexplorer && viewItem == channel",
+          "group": "1_modification"
+        },
+        {
+          "command": "mqexplorer.startChannel",
+          "when": "view == mqexplorer && (viewItem == inactiveChannel || viewItem == stoppedChannel || viewItem == retryingChannel)",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.stopChannel",
+          "when": "view == mqexplorer && viewItem == runningChannel",
+          "group": "inline"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "mqexplorer.addConnectionProfile",
+          "title": "MQExplorer: Add Connection Profile"
+        },
+        {
+          "command": "mqexplorer.searchFilter",
+          "title": "MQExplorer: Search/Filter"
+        },
+        {
+          "command": "mqexplorer.clearFilter",
+          "title": "MQExplorer: Clear Filter"
+        },
+        {
+          "command": "mqexplorer.refreshTreeView",
+          "title": "MQExplorer: Refresh"
+        },
+        {
+          "command": "mqexplorer.exportConnectionProfiles",
+          "title": "MQExplorer: Export Connection Profiles"
+        },
+        {
+          "command": "mqexplorer.importConnectionProfiles",
+          "title": "MQExplorer: Import Connection Profiles"
+        },
+        {
+          "command": "mqexplorer.openCommandPalette",
+          "title": "MQExplorer: Open Command Palette"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.7",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.100.0",
+    "@typescript-eslint/eslint-plugin": "^8.31.1",
+    "@typescript-eslint/parser": "^8.31.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2",
+    "eslint": "^9.27.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.816.0",
+    "@azure/identity": "^4.10.0",
+    "@azure/service-bus": "^7.9.5",
+    "amqplib": "^0.10.8",
+    "ibmmq": "^2.1.4",
+    "kafkajs": "^2.2.4",
+    "prettier": "^3.5.3",
+    "stompit": "^1.0.0",
+    "uuid": "^9.0.1"
+  }
+}
