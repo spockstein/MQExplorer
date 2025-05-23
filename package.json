@@ -4,7 +4,7 @@
   "description": "A VS Code extension for browsing and managing message queues across multiple providers",
   "version": "0.0.1",
   "publisher": "praxai",
-   "repository": {
+  "repository": {
     "type": "git",
     "url": "https://github.com/spockstein/mqexplorer.git"
   },
@@ -14,7 +14,7 @@
   "categories": [
     "Programming Languages",
     "Machine Learning",
-    "Education", 
+    "Education",
     "Other"
   ],
   "keywords": [
@@ -41,7 +41,7 @@
     "Developer Tools"
   ],
   "activationEvents": [],
-  "main": "./out/extension.js",
+  "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
@@ -366,14 +366,18 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p ./",
+    "watch-tests": "tsc -p ./ -w",
+    "pretest": "npm run compile-tests && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "@types/amqplib": "^0.10.7",
     "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
@@ -382,8 +386,19 @@
     "@typescript-eslint/parser": "^8.31.1",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.5.2",
+    "assert": "^2.1.0",
+    "buffer": "^6.0.3",
+    "crypto-browserify": "^3.12.1",
     "eslint": "^9.27.0",
-    "typescript": "^5.8.3"
+    "os-browserify": "^0.3.0",
+    "path-browserify": "^1.0.1",
+    "process": "^0.11.10",
+    "stream-browserify": "^3.0.0",
+    "ts-loader": "^9.5.2",
+    "typescript": "^5.8.3",
+    "util": "^0.12.5",
+    "webpack": "^5.99.9",
+    "webpack-cli": "^6.0.1"
   },
   "dependencies": {
     "@aws-sdk/client-sqs": "^3.816.0",

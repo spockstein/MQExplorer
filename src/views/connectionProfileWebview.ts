@@ -169,6 +169,14 @@ export class ConnectionProfileWebview {
             connectionParams: this.getDefaultConnectionParams(this.defaultProviderType)
         };
 
+        // Pre-compute all the values that need type assertions to avoid using 'as' in template literals
+        const ibmmqParams = profile.providerType === 'ibmmq' ? profile.connectionParams : null;
+        const rabbitmqParams = profile.providerType === 'rabbitmq' ? profile.connectionParams : null;
+        const kafkaParams = profile.providerType === 'kafka' ? profile.connectionParams : null;
+        const activemqParams = profile.providerType === 'activemq' ? profile.connectionParams : null;
+        const azureParams = profile.providerType === 'azureservicebus' ? profile.connectionParams : null;
+        const awssqsParams = profile.providerType === 'awssqs' ? profile.connectionParams : null;
+
         return `<!DOCTYPE html>
         <html lang="en">
         <head>
@@ -240,7 +248,7 @@ export class ConnectionProfileWebview {
 
             <div class="form-group">
                 <label for="providerType">Provider Type</label>
-                <select id="providerType" disabled>
+                <select id="providerType">
                     <option value="ibmmq" ${profile.providerType === 'ibmmq' ? 'selected' : ''}>IBM MQ</option>
                     <option value="rabbitmq" ${profile.providerType === 'rabbitmq' ? 'selected' : ''}>RabbitMQ</option>
                     <option value="kafka" ${profile.providerType === 'kafka' ? 'selected' : ''}>Kafka</option>
@@ -255,27 +263,27 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="queueManager">Queue Manager</label>
-                    <input type="text" id="queueManager" value="${profile.providerType === 'ibmmq' ? (profile as IBMMQConnectionProfile).connectionParams.queueManager || '' : ''}" required>
+                    <input type="text" id="queueManager" value="${ibmmqParams ? ibmmqParams.queueManager || '' : ''}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="ibmmq_host">Host</label>
-                    <input type="text" id="ibmmq_host" value="${profile.providerType === 'ibmmq' ? (profile as IBMMQConnectionProfile).connectionParams.host || '' : ''}" required>
+                    <input type="text" id="ibmmq_host" value="${ibmmqParams ? ibmmqParams.host || '' : ''}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="ibmmq_port">Port</label>
-                    <input type="number" id="ibmmq_port" value="${profile.providerType === 'ibmmq' ? (profile as IBMMQConnectionProfile).connectionParams.port || 1414 : 1414}" required>
+                    <input type="number" id="ibmmq_port" value="${ibmmqParams ? ibmmqParams.port || 1414 : 1414}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="channel">Channel</label>
-                    <input type="text" id="channel" value="${profile.providerType === 'ibmmq' ? (profile as IBMMQConnectionProfile).connectionParams.channel || 'SYSTEM.DEF.SVRCONN' : 'SYSTEM.DEF.SVRCONN'}" required>
+                    <input type="text" id="channel" value="${ibmmqParams ? ibmmqParams.channel || 'SYSTEM.DEF.SVRCONN' : 'SYSTEM.DEF.SVRCONN'}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="ibmmq_username">Username (optional)</label>
-                    <input type="text" id="ibmmq_username" value="${profile.providerType === 'ibmmq' ? (profile as IBMMQConnectionProfile).connectionParams.username || '' : ''}">
+                    <input type="text" id="ibmmq_username" value="${ibmmqParams ? ibmmqParams.username || '' : ''}">
                 </div>
 
                 <div class="form-group">
@@ -284,7 +292,7 @@ export class ConnectionProfileWebview {
                 </div>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="ibmmq_useTLS" ${profile.providerType === 'ibmmq' && (profile as IBMMQConnectionProfile).connectionParams.useTLS ? 'checked' : ''}>
+                    <input type="checkbox" id="ibmmq_useTLS" ${ibmmqParams && ibmmqParams.useTLS ? 'checked' : ''}>
                     <label for="ibmmq_useTLS">Use TLS</label>
                 </div>
             </div>
@@ -294,22 +302,22 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="rabbitmq_host">Host</label>
-                    <input type="text" id="rabbitmq_host" value="${profile.providerType === 'rabbitmq' ? (profile as RabbitMQConnectionProfile).connectionParams.host || '' : ''}" required>
+                    <input type="text" id="rabbitmq_host" value="${rabbitmqParams ? rabbitmqParams.host || '' : ''}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="rabbitmq_port">Port</label>
-                    <input type="number" id="rabbitmq_port" value="${profile.providerType === 'rabbitmq' ? (profile as RabbitMQConnectionProfile).connectionParams.port || 5672 : 5672}" required>
+                    <input type="number" id="rabbitmq_port" value="${rabbitmqParams ? rabbitmqParams.port || 5672 : 5672}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="vhost">Virtual Host (optional)</label>
-                    <input type="text" id="vhost" value="${profile.providerType === 'rabbitmq' ? (profile as RabbitMQConnectionProfile).connectionParams.vhost || '/' : '/'}">
+                    <input type="text" id="vhost" value="${rabbitmqParams ? rabbitmqParams.vhost || '/' : '/'}">
                 </div>
 
                 <div class="form-group">
                     <label for="rabbitmq_username">Username (optional)</label>
-                    <input type="text" id="rabbitmq_username" value="${profile.providerType === 'rabbitmq' ? (profile as RabbitMQConnectionProfile).connectionParams.username || 'guest' : 'guest'}">
+                    <input type="text" id="rabbitmq_username" value="${rabbitmqParams ? rabbitmqParams.username || 'guest' : 'guest'}">
                 </div>
 
                 <div class="form-group">
@@ -318,7 +326,7 @@ export class ConnectionProfileWebview {
                 </div>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="rabbitmq_useTLS" ${profile.providerType === 'rabbitmq' && (profile as RabbitMQConnectionProfile).connectionParams.useTLS ? 'checked' : ''}>
+                    <input type="checkbox" id="rabbitmq_useTLS" ${rabbitmqParams && rabbitmqParams.useTLS ? 'checked' : ''}>
                     <label for="rabbitmq_useTLS">Use TLS</label>
                 </div>
             </div>
@@ -328,37 +336,37 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="kafka_brokers">Brokers (comma-separated list of host:port)</label>
-                    <input type="text" id="kafka_brokers" value="${profile.providerType === 'kafka' ? (profile as KafkaConnectionProfile).connectionParams.brokers?.join(',') || 'localhost:9092' : 'localhost:9092'}" required>
+                    <input type="text" id="kafka_brokers" value="${kafkaParams ? kafkaParams.brokers?.join(',') || 'localhost:9092' : 'localhost:9092'}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="kafka_clientId">Client ID (optional)</label>
-                    <input type="text" id="kafka_clientId" value="${profile.providerType === 'kafka' ? (profile as KafkaConnectionProfile).connectionParams.clientId || 'mqexplorer' : 'mqexplorer'}">
+                    <input type="text" id="kafka_clientId" value="${kafkaParams ? kafkaParams.clientId || 'mqexplorer' : 'mqexplorer'}">
                 </div>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="kafka_ssl" ${profile.providerType === 'kafka' && (profile as KafkaConnectionProfile).connectionParams.ssl ? 'checked' : ''}>
+                    <input type="checkbox" id="kafka_ssl" ${kafkaParams && kafkaParams.ssl ? 'checked' : ''}>
                     <label for="kafka_ssl">Use SSL/TLS</label>
                 </div>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="kafka_sasl" ${profile.providerType === 'kafka' && (profile as KafkaConnectionProfile).connectionParams.sasl ? 'checked' : ''}>
+                    <input type="checkbox" id="kafka_sasl" ${kafkaParams && kafkaParams.sasl ? 'checked' : ''}>
                     <label for="kafka_sasl">Use SASL Authentication</label>
                 </div>
 
-                <div id="kafka_sasl_params" style="display: ${profile.providerType === 'kafka' && (profile as KafkaConnectionProfile).connectionParams.sasl ? 'block' : 'none'}">
+                <div id="kafka_sasl_params" style="display: ${kafkaParams && kafkaParams.sasl ? 'block' : 'none'}">
                     <div class="form-group">
                         <label for="kafka_sasl_mechanism">SASL Mechanism</label>
                         <select id="kafka_sasl_mechanism">
-                            <option value="plain" ${profile.providerType === 'kafka' && (profile as KafkaConnectionProfile).connectionParams.sasl?.mechanism === 'plain' ? 'selected' : ''}>PLAIN</option>
-                            <option value="scram-sha-256" ${profile.providerType === 'kafka' && (profile as KafkaConnectionProfile).connectionParams.sasl?.mechanism === 'scram-sha-256' ? 'selected' : ''}>SCRAM-SHA-256</option>
-                            <option value="scram-sha-512" ${profile.providerType === 'kafka' && (profile as KafkaConnectionProfile).connectionParams.sasl?.mechanism === 'scram-sha-512' ? 'selected' : ''}>SCRAM-SHA-512</option>
+                            <option value="plain" ${kafkaParams && kafkaParams.sasl?.mechanism === 'plain' ? 'selected' : ''}>PLAIN</option>
+                            <option value="scram-sha-256" ${kafkaParams && kafkaParams.sasl?.mechanism === 'scram-sha-256' ? 'selected' : ''}>SCRAM-SHA-256</option>
+                            <option value="scram-sha-512" ${kafkaParams && kafkaParams.sasl?.mechanism === 'scram-sha-512' ? 'selected' : ''}>SCRAM-SHA-512</option>
                         </select>
                     </div>
 
                     <div class="form-group">
                         <label for="kafka_sasl_username">Username</label>
-                        <input type="text" id="kafka_sasl_username" value="${profile.providerType === 'kafka' && (profile as KafkaConnectionProfile).connectionParams.sasl ? (profile as KafkaConnectionProfile).connectionParams.sasl!.username || '' : ''}">
+                        <input type="text" id="kafka_sasl_username" value="${kafkaParams && kafkaParams.sasl ? kafkaParams.sasl.username || '' : ''}">
                     </div>
 
                     <div class="form-group">
@@ -369,12 +377,12 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="kafka_connectionTimeout">Connection Timeout (ms)</label>
-                    <input type="number" id="kafka_connectionTimeout" value="${profile.providerType === 'kafka' ? (profile as KafkaConnectionProfile).connectionParams.connectionTimeout || 30000 : 30000}">
+                    <input type="number" id="kafka_connectionTimeout" value="${kafkaParams ? kafkaParams.connectionTimeout || 30000 : 30000}">
                 </div>
 
                 <div class="form-group">
                     <label for="kafka_authenticationTimeout">Authentication Timeout (ms)</label>
-                    <input type="number" id="kafka_authenticationTimeout" value="${profile.providerType === 'kafka' ? (profile as KafkaConnectionProfile).connectionParams.authenticationTimeout || 10000 : 10000}">
+                    <input type="number" id="kafka_authenticationTimeout" value="${kafkaParams ? kafkaParams.authenticationTimeout || 10000 : 10000}">
                 </div>
             </div>
 
@@ -383,16 +391,16 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="activemq_host">Host</label>
-                    <input type="text" id="activemq_host" value="${profile.providerType === 'activemq' ? (profile as ActiveMQConnectionProfile).connectionParams.host || 'localhost' : 'localhost'}" required>
+                    <input type="text" id="activemq_host" value="${activemqParams ? activemqParams.host || 'localhost' : 'localhost'}" required>
                 </div>
 
                 <div class="form-group">
                     <label for="activemq_port">Port</label>
-                    <input type="number" id="activemq_port" value="${profile.providerType === 'activemq' ? (profile as ActiveMQConnectionProfile).connectionParams.port || 61613 : 61613}" required>
+                    <input type="number" id="activemq_port" value="${activemqParams ? activemqParams.port || 61613 : 61613}" required>
                 </div>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="activemq_ssl" ${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.ssl ? 'checked' : ''}>
+                    <input type="checkbox" id="activemq_ssl" ${activemqParams && activemqParams.ssl ? 'checked' : ''}>
                     <label for="activemq_ssl">Use SSL/TLS</label>
                 </div>
 
@@ -400,7 +408,7 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="activemq_login">Login (optional)</label>
-                    <input type="text" id="activemq_login" value="${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.connectHeaders ? (profile as ActiveMQConnectionProfile).connectionParams.connectHeaders!.login || '' : ''}">
+                    <input type="text" id="activemq_login" value="${activemqParams && activemqParams.connectHeaders ? activemqParams.connectHeaders.login || '' : ''}">
                 </div>
 
                 <div class="form-group">
@@ -410,49 +418,49 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="activemq_host_header">Host Header (optional)</label>
-                    <input type="text" id="activemq_host_header" value="${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.connectHeaders ? (profile as ActiveMQConnectionProfile).connectionParams.connectHeaders!.host || '' : ''}">
+                    <input type="text" id="activemq_host_header" value="${activemqParams && activemqParams.connectHeaders ? activemqParams.connectHeaders.host || '' : ''}">
                 </div>
 
                 <div class="form-group">
                     <label for="activemq_heart_beat">Heart Beat (optional, format: cx,cy)</label>
-                    <input type="text" id="activemq_heart_beat" value="${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.connectHeaders ? (profile as ActiveMQConnectionProfile).connectionParams.connectHeaders!['heart-beat'] || '10000,10000' : '10000,10000'}">
+                    <input type="text" id="activemq_heart_beat" value="${activemqParams && activemqParams.connectHeaders ? activemqParams.connectHeaders['heart-beat'] || '10000,10000' : '10000,10000'}">
                 </div>
 
                 <div class="form-group">
                     <label for="activemq_accept_version">Accept Version (optional)</label>
-                    <input type="text" id="activemq_accept_version" value="${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.connectHeaders ? (profile as ActiveMQConnectionProfile).connectionParams.connectHeaders!['accept-version'] || '1.0,1.1,1.2' : '1.0,1.1,1.2'}">
+                    <input type="text" id="activemq_accept_version" value="${activemqParams && activemqParams.connectHeaders ? activemqParams.connectHeaders['accept-version'] || '1.0,1.1,1.2' : '1.0,1.1,1.2'}">
                 </div>
 
                 <div class="form-group">
                     <label for="activemq_connect_timeout">Connection Timeout (ms)</label>
-                    <input type="number" id="activemq_connect_timeout" value="${profile.providerType === 'activemq' ? (profile as ActiveMQConnectionProfile).connectionParams.connectTimeout || 10000 : 10000}">
+                    <input type="number" id="activemq_connect_timeout" value="${activemqParams ? activemqParams.connectTimeout || 10000 : 10000}">
                 </div>
 
                 <h3>Reconnect Options</h3>
 
                 <div class="form-group">
                     <label for="activemq_max_reconnects">Max Reconnects</label>
-                    <input type="number" id="activemq_max_reconnects" value="${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts ? (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts!.maxReconnects || 10 : 10}">
+                    <input type="number" id="activemq_max_reconnects" value="${activemqParams && activemqParams.reconnectOpts ? activemqParams.reconnectOpts.maxReconnects || 10 : 10}">
                 </div>
 
                 <div class="form-group">
                     <label for="activemq_initial_reconnect_delay">Initial Reconnect Delay (ms)</label>
-                    <input type="number" id="activemq_initial_reconnect_delay" value="${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts ? (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts!.initialReconnectDelay || 1000 : 1000}">
+                    <input type="number" id="activemq_initial_reconnect_delay" value="${activemqParams && activemqParams.reconnectOpts ? activemqParams.reconnectOpts.initialReconnectDelay || 1000 : 1000}">
                 </div>
 
                 <div class="form-group">
                     <label for="activemq_max_reconnect_delay">Max Reconnect Delay (ms)</label>
-                    <input type="number" id="activemq_max_reconnect_delay" value="${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts ? (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts!.maxReconnectDelay || 30000 : 30000}">
+                    <input type="number" id="activemq_max_reconnect_delay" value="${activemqParams && activemqParams.reconnectOpts ? activemqParams.reconnectOpts.maxReconnectDelay || 30000 : 30000}">
                 </div>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="activemq_use_exponential_backoff" ${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts?.useExponentialBackOff ? 'checked' : 'checked'}>
+                    <input type="checkbox" id="activemq_use_exponential_backoff" ${activemqParams && activemqParams.reconnectOpts?.useExponentialBackOff ? 'checked' : 'checked'}>
                     <label for="activemq_use_exponential_backoff">Use Exponential Backoff</label>
                 </div>
 
                 <div class="form-group">
                     <label for="activemq_max_reconnect_attempts">Max Reconnect Attempts</label>
-                    <input type="number" id="activemq_max_reconnect_attempts" value="${profile.providerType === 'activemq' && (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts ? (profile as ActiveMQConnectionProfile).connectionParams.reconnectOpts!.maxReconnectAttempts || 10 : 10}">
+                    <input type="number" id="activemq_max_reconnect_attempts" value="${activemqParams && activemqParams.reconnectOpts ? activemqParams.reconnectOpts.maxReconnectAttempts || 10 : 10}">
                 </div>
             </div>
 
@@ -460,11 +468,11 @@ export class ConnectionProfileWebview {
                 <h2>Azure Service Bus Connection Parameters</h2>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="azure_use_connection_string" ${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.connectionString ? 'checked' : 'checked'}>
+                    <input type="checkbox" id="azure_use_connection_string" ${azureParams && azureParams.connectionString ? 'checked' : 'checked'}>
                     <label for="azure_use_connection_string">Use Connection String</label>
                 </div>
 
-                <div id="azure_connection_string_params" style="display: ${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.connectionString ? 'block' : 'block'}">
+                <div id="azure_connection_string_params" style="display: ${azureParams && azureParams.connectionString ? 'block' : 'block'}">
                     <div class="form-group">
                         <label for="azure_connection_string">Connection String</label>
                         <input type="password" id="azure_connection_string" placeholder="Enter connection string" required>
@@ -472,24 +480,24 @@ export class ConnectionProfileWebview {
                 </div>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="azure_use_aad_auth" ${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.useAadAuth ? 'checked' : ''}>
+                    <input type="checkbox" id="azure_use_aad_auth" ${azureParams && azureParams.useAadAuth ? 'checked' : ''}>
                     <label for="azure_use_aad_auth">Use Azure Active Directory Authentication</label>
                 </div>
 
-                <div id="azure_aad_params" style="display: ${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.useAadAuth ? 'block' : 'none'}">
+                <div id="azure_aad_params" style="display: ${azureParams && azureParams.useAadAuth ? 'block' : 'none'}">
                     <div class="form-group">
                         <label for="azure_namespace">Fully Qualified Namespace</label>
-                        <input type="text" id="azure_namespace" value="${profile.providerType === 'azureservicebus' ? (profile as AzureServiceBusConnectionProfile).connectionParams.fullyQualifiedNamespace || '' : ''}" placeholder="e.g., myservicebus.servicebus.windows.net">
+                        <input type="text" id="azure_namespace" value="${azureParams ? azureParams.fullyQualifiedNamespace || '' : ''}" placeholder="e.g., myservicebus.servicebus.windows.net">
                     </div>
 
                     <div class="form-group">
                         <label for="azure_tenant_id">Tenant ID</label>
-                        <input type="text" id="azure_tenant_id" value="${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.credential ? (profile as AzureServiceBusConnectionProfile).connectionParams.credential!.tenantId || '' : ''}">
+                        <input type="text" id="azure_tenant_id" value="${azureParams && azureParams.credential ? azureParams.credential.tenantId || '' : ''}">
                     </div>
 
                     <div class="form-group">
                         <label for="azure_client_id">Client ID</label>
-                        <input type="text" id="azure_client_id" value="${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.credential ? (profile as AzureServiceBusConnectionProfile).connectionParams.credential!.clientId || '' : ''}">
+                        <input type="text" id="azure_client_id" value="${azureParams && azureParams.credential ? azureParams.credential.clientId || '' : ''}">
                     </div>
 
                     <div class="form-group">
@@ -500,31 +508,31 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="azure_entity_path">Entity Path (Queue or Topic name, optional)</label>
-                    <input type="text" id="azure_entity_path" value="${profile.providerType === 'azureservicebus' ? (profile as AzureServiceBusConnectionProfile).connectionParams.entityPath || '' : ''}">
+                    <input type="text" id="azure_entity_path" value="${azureParams ? azureParams.entityPath || '' : ''}">
                 </div>
 
                 <h3>Retry Options</h3>
 
                 <div class="form-group">
                     <label for="azure_max_retries">Max Retries</label>
-                    <input type="number" id="azure_max_retries" value="${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.retryOptions ? (profile as AzureServiceBusConnectionProfile).connectionParams.retryOptions!.maxRetries || 3 : 3}">
+                    <input type="number" id="azure_max_retries" value="${azureParams && azureParams.retryOptions ? azureParams.retryOptions.maxRetries || 3 : 3}">
                 </div>
 
                 <div class="form-group">
                     <label for="azure_retry_delay">Retry Delay (ms)</label>
-                    <input type="number" id="azure_retry_delay" value="${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.retryOptions ? (profile as AzureServiceBusConnectionProfile).connectionParams.retryOptions!.retryDelayInMs || 1000 : 1000}">
+                    <input type="number" id="azure_retry_delay" value="${azureParams && azureParams.retryOptions ? azureParams.retryOptions.retryDelayInMs || 1000 : 1000}">
                 </div>
 
                 <div class="form-group">
                     <label for="azure_max_retry_delay">Max Retry Delay (ms)</label>
-                    <input type="number" id="azure_max_retry_delay" value="${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.retryOptions ? (profile as AzureServiceBusConnectionProfile).connectionParams.retryOptions!.maxRetryDelayInMs || 30000 : 30000}">
+                    <input type="number" id="azure_max_retry_delay" value="${azureParams && azureParams.retryOptions ? azureParams.retryOptions.maxRetryDelayInMs || 30000 : 30000}">
                 </div>
 
                 <div class="form-group">
                     <label for="azure_retry_mode">Retry Mode</label>
                     <select id="azure_retry_mode">
-                        <option value="exponential" ${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.retryOptions?.mode === 'exponential' ? 'selected' : 'selected'}>Exponential</option>
-                        <option value="fixed" ${profile.providerType === 'azureservicebus' && (profile as AzureServiceBusConnectionProfile).connectionParams.retryOptions?.mode === 'fixed' ? 'selected' : ''}>Fixed</option>
+                        <option value="exponential" ${azureParams && azureParams.retryOptions?.mode === 'exponential' ? 'selected' : 'selected'}>Exponential</option>
+                        <option value="fixed" ${azureParams && azureParams.retryOptions?.mode === 'fixed' ? 'selected' : ''}>Fixed</option>
                     </select>
                 </div>
             </div>
@@ -534,25 +542,25 @@ export class ConnectionProfileWebview {
 
                 <div class="form-group">
                     <label for="aws_region">Region</label>
-                    <input type="text" id="aws_region" value="${profile.providerType === 'awssqs' ? (profile as AWSSQSConnectionProfile).connectionParams.region || 'us-east-1' : 'us-east-1'}" required>
+                    <input type="text" id="aws_region" value="${awssqsParams ? awssqsParams.region || 'us-east-1' : 'us-east-1'}" required>
                 </div>
 
                 <div class="form-group checkbox-group">
-                    <input type="checkbox" id="aws_use_profile_credentials" ${profile.providerType === 'awssqs' && (profile as AWSSQSConnectionProfile).connectionParams.useProfileCredentials ? 'checked' : ''}>
+                    <input type="checkbox" id="aws_use_profile_credentials" ${awssqsParams && awssqsParams.useProfileCredentials ? 'checked' : ''}>
                     <label for="aws_use_profile_credentials">Use AWS Credentials from Shared Credentials File</label>
                 </div>
 
-                <div id="aws_profile_params" style="display: ${profile.providerType === 'awssqs' && (profile as AWSSQSConnectionProfile).connectionParams.useProfileCredentials ? 'block' : 'none'}">
+                <div id="aws_profile_params" style="display: ${awssqsParams && awssqsParams.useProfileCredentials ? 'block' : 'none'}">
                     <div class="form-group">
                         <label for="aws_profile">Profile Name</label>
-                        <input type="text" id="aws_profile" value="${profile.providerType === 'awssqs' ? (profile as AWSSQSConnectionProfile).connectionParams.profile || 'default' : 'default'}">
+                        <input type="text" id="aws_profile" value="${awssqsParams ? awssqsParams.profile || 'default' : 'default'}">
                     </div>
                 </div>
 
-                <div id="aws_credentials_params" style="display: ${profile.providerType === 'awssqs' && !(profile as AWSSQSConnectionProfile).connectionParams.useProfileCredentials ? 'block' : 'block'}">
+                <div id="aws_credentials_params" style="display: ${awssqsParams && !awssqsParams.useProfileCredentials ? 'block' : 'block'}">
                     <div class="form-group">
                         <label for="aws_access_key_id">Access Key ID</label>
-                        <input type="text" id="aws_access_key_id" value="${profile.providerType === 'awssqs' && (profile as AWSSQSConnectionProfile).connectionParams.credentials ? (profile as AWSSQSConnectionProfile).connectionParams.credentials!.accessKeyId || '' : ''}">
+                        <input type="text" id="aws_access_key_id" value="${awssqsParams && awssqsParams.credentials ? awssqsParams.credentials.accessKeyId || '' : ''}">
                     </div>
 
                     <div class="form-group">
@@ -562,32 +570,32 @@ export class ConnectionProfileWebview {
 
                     <div class="form-group">
                         <label for="aws_session_token">Session Token (optional)</label>
-                        <input type="password" id="aws_session_token" value="${profile.providerType === 'awssqs' && (profile as AWSSQSConnectionProfile).connectionParams.credentials ? (profile as AWSSQSConnectionProfile).connectionParams.credentials!.sessionToken || '' : ''}">
+                        <input type="password" id="aws_session_token" value="${awssqsParams && awssqsParams.credentials ? awssqsParams.credentials.sessionToken || '' : ''}">
                     </div>
                 </div>
 
                 <div class="form-group">
                     <label for="aws_endpoint">Custom Endpoint URL (optional)</label>
-                    <input type="text" id="aws_endpoint" value="${profile.providerType === 'awssqs' ? (profile as AWSSQSConnectionProfile).connectionParams.endpoint || '' : ''}" placeholder="e.g., http://localhost:4566 for LocalStack">
+                    <input type="text" id="aws_endpoint" value="${awssqsParams ? awssqsParams.endpoint || '' : ''}" placeholder="e.g., http://localhost:4566 for LocalStack">
                 </div>
 
                 <div class="form-group">
                     <label for="aws_queue_url_prefix">Queue URL Prefix (optional)</label>
-                    <input type="text" id="aws_queue_url_prefix" value="${profile.providerType === 'awssqs' ? (profile as AWSSQSConnectionProfile).connectionParams.queueUrlPrefix || '' : ''}" placeholder="e.g., https://sqs.us-east-1.amazonaws.com/123456789012">
+                    <input type="text" id="aws_queue_url_prefix" value="${awssqsParams ? awssqsParams.queueUrlPrefix || '' : ''}" placeholder="e.g., https://sqs.us-east-1.amazonaws.com/123456789012">
                 </div>
 
                 <h3>Retry Options</h3>
 
                 <div class="form-group">
                     <label for="aws_max_retries">Max Retries</label>
-                    <input type="number" id="aws_max_retries" value="${profile.providerType === 'awssqs' ? (profile as AWSSQSConnectionProfile).connectionParams.maxRetries || 3 : 3}">
+                    <input type="number" id="aws_max_retries" value="${awssqsParams ? awssqsParams.maxRetries || 3 : 3}">
                 </div>
 
                 <div class="form-group">
                     <label for="aws_retry_mode">Retry Mode</label>
                     <select id="aws_retry_mode">
-                        <option value="standard" ${profile.providerType === 'awssqs' && (profile as AWSSQSConnectionProfile).connectionParams.retryMode === 'standard' ? 'selected' : 'selected'}>Standard</option>
-                        <option value="adaptive" ${profile.providerType === 'awssqs' && (profile as AWSSQSConnectionProfile).connectionParams.retryMode === 'adaptive' ? 'selected' : ''}>Adaptive</option>
+                        <option value="standard" ${awssqsParams && awssqsParams.retryMode === 'standard' ? 'selected' : 'selected'}>Standard</option>
+                        <option value="adaptive" ${awssqsParams && awssqsParams.retryMode === 'adaptive' ? 'selected' : ''}>Adaptive</option>
                     </select>
                 </div>
             </div>
@@ -609,8 +617,14 @@ export class ConnectionProfileWebview {
                     // Show only the parameters for the selected provider type
                     updateProviderSpecificParams(providerType);
 
+                    // Add event listener for provider type change
+                    document.getElementById('providerType').addEventListener('change', (event) => {
+                        const newProviderType = event.target.value;
+                        updateProviderSpecificParams(newProviderType);
+                    });
+
                     // If this is a new profile (not editing), initialize form fields with default values
-                    if (!('${profile.id}')) {
+                    if (!"${profile.id}") {
                         // We'll initialize the form fields after all functions are defined
                         setTimeout(() => {
                             if (typeof setDefaultValues === 'function') {
@@ -658,8 +672,8 @@ export class ConnectionProfileWebview {
                             return;
                         }
 
-                        let profile = {
-                            id: '${profile.id}',
+                        let newProfile = {
+                            id: "${profile.id}",
                             name,
                             providerType
                         };
@@ -682,7 +696,7 @@ export class ConnectionProfileWebview {
                                 return;
                             }
 
-                            profile.connectionParams = {
+                            newProfile.connectionParams = {
                                 queueManager,
                                 host,
                                 port,
@@ -707,7 +721,7 @@ export class ConnectionProfileWebview {
                                 return;
                             }
 
-                            profile.connectionParams = {
+                            newProfile.connectionParams = {
                                 host,
                                 port,
                                 vhost: vhost || '/',
@@ -735,7 +749,7 @@ export class ConnectionProfileWebview {
                             const brokers = brokersString.split(',').map(broker => broker.trim());
 
                             // Create connection params
-                            profile.connectionParams = {
+                            newProfile.connectionParams = {
                                 brokers,
                                 clientId: clientId || 'mqexplorer',
                                 ssl,
@@ -757,8 +771,8 @@ export class ConnectionProfileWebview {
                                     return;
                                 }
 
-                                profile.connectionParams.sasl = {
-                                    mechanism: mechanism as 'plain' | 'scram-sha-256' | 'scram-sha-512',
+                                newProfile.connectionParams.sasl = {
+                                    mechanism: mechanism,
                                     username: saslUsername,
                                     password: saslPassword
                                 };
@@ -792,7 +806,7 @@ export class ConnectionProfileWebview {
                             }
 
                             // Create connection params
-                            profile.connectionParams = {
+                            newProfile.connectionParams = {
                                 host,
                                 port,
                                 ssl,
@@ -801,31 +815,31 @@ export class ConnectionProfileWebview {
 
                             // Add connect headers if any are provided
                             if (login || passcode || hostHeader || heartBeat || acceptVersion) {
-                                profile.connectionParams.connectHeaders = {};
+                                newProfile.connectionParams.connectHeaders = {};
 
                                 if (login) {
-                                    profile.connectionParams.connectHeaders.login = login;
+                                    newProfile.connectionParams.connectHeaders.login = login;
                                 }
 
                                 if (passcode) {
-                                    profile.connectionParams.connectHeaders.passcode = passcode;
+                                    newProfile.connectionParams.connectHeaders.passcode = passcode;
                                 }
 
                                 if (hostHeader) {
-                                    profile.connectionParams.connectHeaders.host = hostHeader;
+                                    newProfile.connectionParams.connectHeaders.host = hostHeader;
                                 }
 
                                 if (heartBeat) {
-                                    profile.connectionParams.connectHeaders['heart-beat'] = heartBeat;
+                                    newProfile.connectionParams.connectHeaders['heart-beat'] = heartBeat;
                                 }
 
                                 if (acceptVersion) {
-                                    profile.connectionParams.connectHeaders['accept-version'] = acceptVersion;
+                                    newProfile.connectionParams.connectHeaders['accept-version'] = acceptVersion;
                                 }
                             }
 
                             // Add reconnect options
-                            profile.connectionParams.reconnectOpts = {
+                            newProfile.connectionParams.reconnectOpts = {
                                 maxReconnects,
                                 initialReconnectDelay,
                                 maxReconnectDelay,
@@ -847,14 +861,14 @@ export class ConnectionProfileWebview {
                             const retryMode = document.getElementById('azure_retry_mode').value;
 
                             // Create connection params
-                            profile.connectionParams = {
+                            newProfile.connectionParams = {
                                 entityPath: entityPath || undefined,
                                 useAadAuth,
                                 retryOptions: {
                                     maxRetries,
                                     retryDelayInMs: retryDelay,
                                     maxRetryDelayInMs: maxRetryDelay,
-                                    mode: retryMode as 'exponential' | 'fixed'
+                                    mode: retryMode
                                 }
                             };
 
@@ -870,7 +884,7 @@ export class ConnectionProfileWebview {
                                     return;
                                 }
 
-                                profile.connectionParams.connectionString = connectionString;
+                                newProfile.connectionParams.connectionString = connectionString;
                             }
 
                             // Add AAD credentials if using them
@@ -888,8 +902,8 @@ export class ConnectionProfileWebview {
                                     return;
                                 }
 
-                                profile.connectionParams.fullyQualifiedNamespace = namespace;
-                                profile.connectionParams.credential = {
+                                newProfile.connectionParams.fullyQualifiedNamespace = namespace;
+                                newProfile.connectionParams.credential = {
                                     tenantId,
                                     clientId,
                                     clientSecret
@@ -926,19 +940,19 @@ export class ConnectionProfileWebview {
                             const retryMode = document.getElementById('aws_retry_mode').value;
 
                             // Create connection params
-                            profile.connectionParams = {
+                            newProfile.connectionParams = {
                                 region,
                                 useProfileCredentials,
                                 endpoint: endpoint || undefined,
                                 queueUrlPrefix: queueUrlPrefix || undefined,
                                 maxRetries,
-                                retryMode: retryMode as 'standard' | 'adaptive'
+                                retryMode: retryMode
                             };
 
                             // Add profile name if using profile credentials
                             if (useProfileCredentials) {
                                 const profileName = document.getElementById('aws_profile').value;
-                                profile.connectionParams.profile = profileName || 'default';
+                                newProfile.connectionParams.profile = profileName || 'default';
                             } else {
                                 // Add credentials if not using profile credentials
                                 const accessKeyId = document.getElementById('aws_access_key_id').value;
@@ -953,7 +967,7 @@ export class ConnectionProfileWebview {
                                     return;
                                 }
 
-                                profile.connectionParams.credentials = {
+                                newProfile.connectionParams.credentials = {
                                     accessKeyId,
                                     secretAccessKey,
                                     sessionToken: sessionToken || undefined
@@ -963,7 +977,7 @@ export class ConnectionProfileWebview {
 
                         vscode.postMessage({
                             command: 'saveProfile',
-                            profile
+                            profile: newProfile
                         });
                     });
 
@@ -972,8 +986,8 @@ export class ConnectionProfileWebview {
                         const name = document.getElementById('name').value;
                         const providerType = document.getElementById('providerType').value;
 
-                        let profile = {
-                            id: '${profile.id}',
+                        let testProfile = {
+                            id: "${profile.id}",
                             name,
                             providerType
                         };
@@ -988,7 +1002,7 @@ export class ConnectionProfileWebview {
                             const password = document.getElementById('ibmmq_password').value;
                             const useTLS = document.getElementById('ibmmq_useTLS').checked;
 
-                            profile.connectionParams = {
+                            testProfile.connectionParams = {
                                 queueManager,
                                 host,
                                 port,
@@ -1005,7 +1019,7 @@ export class ConnectionProfileWebview {
                             const password = document.getElementById('rabbitmq_password').value;
                             const useTLS = document.getElementById('rabbitmq_useTLS').checked;
 
-                            profile.connectionParams = {
+                            testProfile.connectionParams = {
                                 host,
                                 port,
                                 vhost: vhost || '/',
@@ -1025,7 +1039,7 @@ export class ConnectionProfileWebview {
                             const brokers = brokersString.split(',').map(broker => broker.trim());
 
                             // Create connection params
-                            profile.connectionParams = {
+                            testProfile.connectionParams = {
                                 brokers,
                                 clientId: clientId || 'mqexplorer',
                                 ssl,
@@ -1039,8 +1053,8 @@ export class ConnectionProfileWebview {
                                 const saslUsername = document.getElementById('kafka_sasl_username').value;
                                 const saslPassword = document.getElementById('kafka_sasl_password').value;
 
-                                profile.connectionParams.sasl = {
-                                    mechanism: mechanism as 'plain' | 'scram-sha-256' | 'scram-sha-512',
+                                testProfile.connectionParams.sasl = {
+                                    mechanism: mechanism,
                                     username: saslUsername,
                                     password: saslPassword
                                 };
@@ -1066,7 +1080,7 @@ export class ConnectionProfileWebview {
                             const maxReconnectAttempts = parseInt(document.getElementById('activemq_max_reconnect_attempts').value, 10);
 
                             // Create connection params
-                            profile.connectionParams = {
+                            testProfile.connectionParams = {
                                 host,
                                 port,
                                 ssl,
@@ -1075,31 +1089,31 @@ export class ConnectionProfileWebview {
 
                             // Add connect headers if any are provided
                             if (login || passcode || hostHeader || heartBeat || acceptVersion) {
-                                profile.connectionParams.connectHeaders = {};
+                                testProfile.connectionParams.connectHeaders = {};
 
                                 if (login) {
-                                    profile.connectionParams.connectHeaders.login = login;
+                                    testProfile.connectionParams.connectHeaders.login = login;
                                 }
 
                                 if (passcode) {
-                                    profile.connectionParams.connectHeaders.passcode = passcode;
+                                    testProfile.connectionParams.connectHeaders.passcode = passcode;
                                 }
 
                                 if (hostHeader) {
-                                    profile.connectionParams.connectHeaders.host = hostHeader;
+                                    testProfile.connectionParams.connectHeaders.host = hostHeader;
                                 }
 
                                 if (heartBeat) {
-                                    profile.connectionParams.connectHeaders['heart-beat'] = heartBeat;
+                                    testProfile.connectionParams.connectHeaders['heart-beat'] = heartBeat;
                                 }
 
                                 if (acceptVersion) {
-                                    profile.connectionParams.connectHeaders['accept-version'] = acceptVersion;
+                                    testProfile.connectionParams.connectHeaders['accept-version'] = acceptVersion;
                                 }
                             }
 
                             // Add reconnect options
-                            profile.connectionParams.reconnectOpts = {
+                            testProfile.connectionParams.reconnectOpts = {
                                 maxReconnects,
                                 initialReconnectDelay,
                                 maxReconnectDelay,
@@ -1121,21 +1135,21 @@ export class ConnectionProfileWebview {
                             const retryMode = document.getElementById('azure_retry_mode').value;
 
                             // Create connection params
-                            profile.connectionParams = {
+                            testProfile.connectionParams = {
                                 entityPath: entityPath || undefined,
                                 useAadAuth,
                                 retryOptions: {
                                     maxRetries,
                                     retryDelayInMs: retryDelay,
                                     maxRetryDelayInMs: maxRetryDelay,
-                                    mode: retryMode as 'exponential' | 'fixed'
+                                    mode: retryMode
                                 }
                             };
 
                             // Add connection string if using it
                             if (useConnectionString) {
                                 const connectionString = document.getElementById('azure_connection_string').value;
-                                profile.connectionParams.connectionString = connectionString;
+                                testProfile.connectionParams.connectionString = connectionString;
                             }
 
                             // Add AAD credentials if using them
@@ -1145,8 +1159,8 @@ export class ConnectionProfileWebview {
                                 const clientId = document.getElementById('azure_client_id').value;
                                 const clientSecret = document.getElementById('azure_client_secret').value;
 
-                                profile.connectionParams.fullyQualifiedNamespace = namespace;
-                                profile.connectionParams.credential = {
+                                testProfile.connectionParams.fullyQualifiedNamespace = namespace;
+                                testProfile.connectionParams.credential = {
                                     tenantId,
                                     clientId,
                                     clientSecret
@@ -1166,26 +1180,26 @@ export class ConnectionProfileWebview {
                             const retryMode = document.getElementById('aws_retry_mode').value;
 
                             // Create connection params
-                            profile.connectionParams = {
+                            testProfile.connectionParams = {
                                 region,
                                 useProfileCredentials,
                                 endpoint: endpoint || undefined,
                                 queueUrlPrefix: queueUrlPrefix || undefined,
                                 maxRetries,
-                                retryMode: retryMode as 'standard' | 'adaptive'
+                                retryMode: retryMode
                             };
 
                             // Add profile name if using profile credentials
                             if (useProfileCredentials) {
                                 const profileName = document.getElementById('aws_profile').value;
-                                profile.connectionParams.profile = profileName || 'default';
+                                testProfile.connectionParams.profile = profileName || 'default';
                             } else {
                                 // Add credentials if not using profile credentials
                                 const accessKeyId = document.getElementById('aws_access_key_id').value;
                                 const secretAccessKey = document.getElementById('aws_secret_access_key').value;
                                 const sessionToken = document.getElementById('aws_session_token').value;
 
-                                profile.connectionParams.credentials = {
+                                testProfile.connectionParams.credentials = {
                                     accessKeyId,
                                     secretAccessKey,
                                     sessionToken: sessionToken || undefined
@@ -1195,7 +1209,7 @@ export class ConnectionProfileWebview {
 
                         vscode.postMessage({
                             command: 'testConnection',
-                            profile
+                            profile: testProfile
                         });
                     });
 
