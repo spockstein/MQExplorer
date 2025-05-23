@@ -1,13 +1,11 @@
 import * as vscode from 'vscode';
-import { IBMMQProvider } from '../providers/IBMMQProvider';
-import { IBMMQConnectionProfile } from '../models/connectionProfile';
-import { ConnectionManager } from '../services/connectionManager';
+import { MockMQProvider } from './mocks/MockMQProvider';
 
 /**
  * Test script to verify queue depth count display
  */
 export async function testQueueDepth(context: vscode.ExtensionContext) {
-    console.log('Starting queue depth test...');
+    console.log('Starting queue depth test with mock provider...');
 
     // Create output channel for logging
     const outputChannel = vscode.window.createOutputChannel('Queue Depth Test');
@@ -26,31 +24,30 @@ export async function testQueueDepth(context: vscode.ExtensionContext) {
     };
 
     try {
-        // Get the connection manager
-        const connectionManager = ConnectionManager.getInstance(context);
+        // We don't need the connection manager for the mock test
 
-        // Create IBM MQ provider
-        log('Creating IBM MQ provider...');
-        const provider = new IBMMQProvider();
+        // Create Mock MQ provider
+        log('Creating Mock MQ provider...');
+        const provider = new MockMQProvider();
 
-        // Connection parameters (adjust these for your environment)
-        const connectionParams: IBMMQConnectionProfile['connectionParams'] = {
-            queueManager: 'QM1',
-            host: 'localhost',
+        // Connection parameters (these are mock parameters and won't actually connect to a real queue manager)
+        const connectionParams = {
+            queueManager: 'MOCK_QM',
+            host: 'mock-host',
             port: 1414,
-            channel: 'DEV.APP.SVRCONN',
-            username: 'app',
-            password: 'passw0rd',
+            channel: 'MOCK.CHANNEL',
+            username: 'mock-user',
+            password: 'mock-password',
             useTLS: false
         };
 
-        // Connect to queue manager
-        log(`Connecting to queue manager ${connectionParams.queueManager}...`);
+        // Connect to mock queue manager
+        log(`Connecting to mock queue manager ${connectionParams.queueManager}...`);
         await provider.connect(connectionParams, context);
-        log('Successfully connected to queue manager');
+        log('Successfully connected to mock queue manager');
 
         // Test queue
-        const queueName = 'DEV.TEST.QUEUE';
+        const queueName = 'MOCK.QUEUE.1';
 
         // Test 1: Get initial queue depth
         log('Test 1: Get initial queue depth');
@@ -117,15 +114,15 @@ export async function testQueueDepth(context: vscode.ExtensionContext) {
             log('ERROR: Queue depth is not zero after clearing the queue', true);
         }
 
-        // Disconnect from queue manager
-        log('Disconnecting from queue manager...');
+        // Disconnect from mock queue manager
+        log('Disconnecting from mock queue manager...');
         await provider.disconnect();
-        log('Successfully disconnected from queue manager');
+        log('Successfully disconnected from mock queue manager');
 
-        log('Test completed successfully!');
+        log('Test with mock provider completed successfully!');
     } catch (error) {
         log(`Error: ${(error as Error).message}`, true);
         log(`Stack trace: ${(error as Error).stack}`, true);
-        log('Test failed!', true);
+        log('Test with mock provider failed!', true);
     }
 }

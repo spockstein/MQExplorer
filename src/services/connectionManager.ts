@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { ConnectionProfile, IBMMQConnectionProfile, RabbitMQConnectionProfile, KafkaConnectionProfile, ActiveMQConnectionProfile, AzureServiceBusConnectionProfile, AWSSQSConnectionProfile } from '../models/connectionProfile';
-import { IBMMQProvider } from '../providers/IBMMQProvider';
+import { IBMMQProvider } from '../providers/IBMMQProvider.simple';
 import { RabbitMQProvider } from '../providers/RabbitMQProvider';
 import { KafkaProvider } from '../providers/KafkaProvider';
 import { ActiveMQProvider } from '../providers/ActiveMQProvider';

@@ -1,12 +1,11 @@
 import * as vscode from 'vscode';
-import { IBMMQProvider } from '../providers/IBMMQProvider';
-import { IBMMQConnectionProfile } from '../models/connectionProfile';
+import { MockMQProvider } from './mocks/MockMQProvider';
 
 /**
  * Test script to verify message browsing functionality
  */
 async function testBrowseMessages() {
-    console.log('Starting message browsing test...');
+    console.log('Starting message browsing test with mock provider...');
 
     // Create output channel for logging
     const outputChannel = vscode.window.createOutputChannel('MQ Explorer Test');
@@ -25,28 +24,28 @@ async function testBrowseMessages() {
     };
 
     try {
-        // Create IBM MQ provider
-        log('Creating IBM MQ provider...');
-        const provider = new IBMMQProvider();
+        // Create Mock MQ provider
+        log('Creating Mock MQ provider...');
+        const provider = new MockMQProvider();
 
-        // Connection parameters (adjust these for your environment)
-        const connectionParams: IBMMQConnectionProfile['connectionParams'] = {
-            queueManager: 'QM1',
-            host: 'localhost',
+        // Connection parameters (these are mock parameters and won't actually connect to a real queue manager)
+        const connectionParams = {
+            queueManager: 'MOCK_QM',
+            host: 'mock-host',
             port: 1414,
-            channel: 'DEV.APP.SVRCONN',
-            username: 'app',
-            password: 'passw0rd',
+            channel: 'MOCK.CHANNEL',
+            username: 'mock-user',
+            password: 'mock-password',
             useTLS: false
         };
 
-        // Connect to queue manager
-        log(`Connecting to queue manager ${connectionParams.queueManager}...`);
+        // Connect to mock queue manager
+        log(`Connecting to mock queue manager ${connectionParams.queueManager}...`);
         await provider.connect(connectionParams);
-        log('Successfully connected to queue manager');
+        log('Successfully connected to mock queue manager');
 
         // Browse messages from a test queue
-        const queueName = 'DEV.QUEUE.1';
+        const queueName = 'MOCK.QUEUE.1';
         log(`Browsing messages from queue: ${queueName}`);
 
         const messages = await provider.browseMessages(queueName, {
@@ -73,16 +72,16 @@ async function testBrowseMessages() {
             log('---');
         });
 
-        // Disconnect from queue manager
-        log('Disconnecting from queue manager...');
+        // Disconnect from mock queue manager
+        log('Disconnecting from mock queue manager...');
         await provider.disconnect();
-        log('Successfully disconnected from queue manager');
+        log('Successfully disconnected from mock queue manager');
 
-        log('Test completed successfully!');
+        log('Test with mock provider completed successfully!');
     } catch (error) {
         log(`Error: ${(error as Error).message}`, true);
         log(`Stack trace: ${(error as Error).stack}`, true);
-        log('Test failed!', true);
+        log('Test with mock provider failed!', true);
     }
 }
 
