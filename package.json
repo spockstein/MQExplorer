@@ -2,7 +2,7 @@
   "name": "mqexplorer",
   "displayName": "MQExplorer",
   "description": "A VS Code extension for browsing and managing message queues across multiple providers",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "publisher": "praxai",
   "repository": {
     "type": "git",
@@ -41,11 +41,17 @@
     "Developer Tools"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "*"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "mqexplorer.addConnectionProfile",
+        "title": "MQExplorer: Add Connection Profile",
+        "icon": "$(add)",
+        "category": "MQExplorer"
+      },
       {
         "command": "mqexplorer.helloWorld",
         "title": "Hello World"
@@ -85,11 +91,6 @@
       {
         "command": "mqexplorer.testAWSSQSOperations",
         "title": "MQExplorer: Test AWS SQS Operations"
-      },
-      {
-        "command": "mqexplorer.addConnectionProfile",
-        "title": "MQExplorer: Add Connection Profile",
-        "icon": "$(add)"
       },
       {
         "command": "mqexplorer.editConnectionProfile",
@@ -371,7 +372,7 @@
     "vscode:prepublish": "npm run package",
     "compile": "webpack",
     "watch": "webpack --watch",
-    "package": "webpack --mode production --devtool hidden-source-map",
+    "package": "cross-env NODE_ENV=production webpack --mode production --devtool hidden-source-map",
     "compile-tests": "tsc -p ./",
     "watch-tests": "tsc -p ./ -w",
     "pretest": "npm run compile-tests && npm run lint",
@@ -390,6 +391,7 @@
     "@vscode/test-electron": "^2.5.2",
     "assert": "^2.1.0",
     "buffer": "^6.0.3",
+    "cross-env": "^7.0.3",
     "crypto-browserify": "^3.12.1",
     "eslint": "^9.27.0",
     "os-browserify": "^0.3.0",
@@ -409,8 +411,10 @@
     "amqplib": "^0.10.8",
     "ibmmq": "^2.1.4",
     "kafkajs": "^2.2.4",
+    "node-gyp-build": "^4.8.4",
     "prettier": "^3.5.3",
     "stompit": "^1.0.0",
+    "url-parse": "^1.5.10",
     "uuid": "^9.0.1"
   }
 }

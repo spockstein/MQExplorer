@@ -15,28 +15,35 @@ export function registerCommands(context: vscode.ExtensionContext, treeDataProvi
     // Register commands
 
     // Connection profile commands
-    context.subscriptions.push(
-        vscode.commands.registerCommand('mqexplorer.addConnectionProfile', async () => {
-            // Show a quick pick to select the provider type
-            const providerTypes = [
-                { label: 'IBM MQ', value: 'ibmmq' },
-                { label: 'RabbitMQ', value: 'rabbitmq' },
-                { label: 'Kafka', value: 'kafka' },
-                { label: 'ActiveMQ', value: 'activemq' },
-                { label: 'Azure Service Bus', value: 'azureservicebus' },
-                { label: 'AWS SQS', value: 'awssqs' }
-            ];
+    // Register addConnectionProfile command (also registered in extension.ts as a fallback)
+    try {
+        context.subscriptions.push(
+            vscode.commands.registerCommand('mqexplorer.addConnectionProfile', async () => {
+                // Show a quick pick to select the provider type
+                const providerTypes = [
+                    { label: 'IBM MQ', value: 'ibmmq' },
+                    { label: 'RabbitMQ', value: 'rabbitmq' },
+                    { label: 'Kafka', value: 'kafka' },
+                    { label: 'ActiveMQ', value: 'activemq' },
+                    { label: 'Azure Service Bus', value: 'azureservicebus' },
+                    { label: 'AWS SQS', value: 'awssqs' }
+                ];
 
-            const selectedProvider = await vscode.window.showQuickPick(providerTypes, {
-                placeHolder: 'Select provider type'
-            });
+                const selectedProvider = await vscode.window.showQuickPick(providerTypes, {
+                    placeHolder: 'Select provider type'
+                });
 
-            if (selectedProvider) {
-                const webview = new ConnectionProfileWebview(context);
-                webview.show(undefined, selectedProvider.value);
-            }
-        })
-    );
+                if (selectedProvider) {
+                    const webview = new ConnectionProfileWebview(context);
+                    webview.show(undefined, selectedProvider.value);
+                }
+            })
+        );
+        console.log('mqexplorer.addConnectionProfile command registered in mqCommands.ts');
+    } catch (error) {
+        // This might happen if the command was already registered in extension.ts
+        console.log('Note: mqexplorer.addConnectionProfile may have already been registered:', error);
+    }
 
     context.subscriptions.push(
         vscode.commands.registerCommand('mqexplorer.editConnectionProfile', (item: MQTreeItem) => {

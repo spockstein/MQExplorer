@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { MQExplorerTreeDataProvider } from './views/mqExplorerTreeDataProvider';
 import { registerCommands } from './commands/mqCommands';
 import { ConnectionManager } from './services/connectionManager';
+import { ConnectionProfileWebview } from './views/connectionProfileWebview';
 import { testBrowseMessages } from './test/browseMessagesTest';
 import { testMQFunctionality } from './test/mqFunctionalityTest';
 import { testMQOperations } from './test/mqOperationsTest';
@@ -17,6 +18,36 @@ import { testAWSSQSOperations } from './test/awsSQSOperationsTest';
 export function activate(context: vscode.ExtensionContext) {
 	console.log('MQExplorer extension is now active!');
 
+	// Register the critical command first - directly in the activate function
+	const addConnectionProfileCommand = vscode.commands.registerCommand('mqexplorer.addConnectionProfile', async () => {
+		try {
+			// Show a quick pick to select the provider type
+			const providerTypes = [
+				{ label: 'IBM MQ', value: 'ibmmq' },
+				{ label: 'RabbitMQ', value: 'rabbitmq' },
+				{ label: 'Kafka', value: 'kafka' },
+				{ label: 'ActiveMQ', value: 'activemq' },
+				{ label: 'Azure Service Bus', value: 'azureservicebus' },
+				{ label: 'AWS SQS', value: 'awssqs' }
+			];
+
+			const selectedProvider = await vscode.window.showQuickPick(providerTypes, {
+				placeHolder: 'Select provider type'
+			});
+
+			if (selectedProvider) {
+				const webview = new ConnectionProfileWebview(context);
+				webview.show(undefined, selectedProvider.value);
+			}
+		} catch (error) {
+			vscode.window.showErrorMessage(`Error in addConnectionProfile command: ${(error as Error).message}`);
+			console.error('Error in addConnectionProfile command:', error);
+		}
+	});
+
+	// Add the command to context subscriptions immediately
+	context.subscriptions.push(addConnectionProfileCommand);
+
 	// Initialize the connection manager
 	const connectionManager = ConnectionManager.getInstance(context);
 
@@ -29,7 +60,7 @@ export function activate(context: vscode.ExtensionContext) {
 		showCollapseAll: true
 	});
 
-	// Register commands
+	// Register the rest of the commands
 	registerCommands(context, treeDataProvider);
 
 	// Register the tree view
