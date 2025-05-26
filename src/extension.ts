@@ -13,6 +13,7 @@ import { testKafkaOperations } from './test/kafkaOperationsTest';
 import { testActiveMQOperations } from './test/activemqOperationsTest';
 import { testAzureServiceBusOperations } from './test/azureServiceBusOperationsTest';
 import { testAWSSQSOperations } from './test/awsSQSOperationsTest';
+import { testPutMessage } from './test/putMessageTest';
 
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
@@ -75,10 +76,19 @@ export function activate(context: vscode.ExtensionContext) {
 	});
 
 	// Register the test command for browsing messages
+	const { testBrowseMessages } = require('./test/browseMessageTest');
 	const testBrowseDisposable = vscode.commands.registerCommand('mqexplorer.testBrowseMessages', async () => {
 		vscode.window.showInformationMessage('Starting message browsing test...');
 		await testBrowseMessages();
 		vscode.window.showInformationMessage('Message browsing test completed. Check the output panel for results.');
+	});
+
+	// Register the debug browse test command
+	const { debugBrowseTest } = require('./test/debugBrowseTest');
+	const debugBrowseDisposable = vscode.commands.registerCommand('mqexplorer.debugBrowseTest', async () => {
+		vscode.window.showInformationMessage('Starting debug browse test...');
+		await debugBrowseTest();
+		vscode.window.showInformationMessage('Debug browse test completed. Check the output panel for results.');
 	});
 
 	// Register the test command for MQ functionality
@@ -137,6 +147,13 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage('AWS SQS operations test completed. Check the output panel for results.');
 	});
 
+	// Register the test command for Put Message functionality
+	const testPutMessageDisposable = vscode.commands.registerCommand('mqexplorer.testPutMessage', async () => {
+		vscode.window.showInformationMessage('Starting Put Message test...');
+		await testPutMessage();
+		vscode.window.showInformationMessage('Put Message test completed. Check the output panel for results.');
+	});
+
 	// Register Command Palette integration
 	const commandPaletteDisposable = vscode.commands.registerCommand('mqexplorer.openCommandPalette', async () => {
 		// Show a quick pick with common MQExplorer commands
@@ -161,6 +178,7 @@ export function activate(context: vscode.ExtensionContext) {
 	context.subscriptions.push(
 		helloDisposable,
 		testBrowseDisposable,
+		debugBrowseDisposable,
 		testMQDisposable,
 		testMQOperationsDisposable,
 		testQueueDepthDisposable,
@@ -169,6 +187,7 @@ export function activate(context: vscode.ExtensionContext) {
 		testActiveMQOperationsDisposable,
 		testAzureServiceBusOperationsDisposable,
 		testAWSSQSOperationsDisposable,
+		testPutMessageDisposable,
 		commandPaletteDisposable
 	);
 }

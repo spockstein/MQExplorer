@@ -623,6 +623,9 @@ export class MessagePutWebview {
 
             vscode.window.showInformationMessage(`Message put to queue: ${this.queueName}`);
 
+            // Emit queue updated event to trigger UI refresh
+            this.connectionManager.emit('queueUpdated', this.queueName);
+
             // Close the panel
             this.panel?.dispose();
         } catch (error) {

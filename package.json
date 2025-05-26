@@ -2,7 +2,7 @@
   "name": "mqexplorer",
   "displayName": "MQ Explorer",
   "description": "A VS Code extension for browsing and managing message queues across multiple providers",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "praxai",
   "repository": {
     "type": "git",
@@ -91,6 +91,10 @@
       {
         "command": "mqexplorer.testAWSSQSOperations",
         "title": "MQExplorer: Test AWS SQS Operations"
+      },
+      {
+        "command": "mqexplorer.testPutMessage",
+        "title": "MQExplorer: Test Put Message Functionality"
       },
       {
         "command": "mqexplorer.editConnectionProfile",
@@ -200,6 +204,11 @@
         "command": "mqexplorer.importConnectionProfiles",
         "title": "MQExplorer: Import Connection Profiles",
         "icon": "$(import)"
+      },
+      {
+        "command": "mqexplorer.debugBrowseTest",
+        "title": "MQExplorer: Debug Browse Test",
+        "icon": "$(debug)"
       }
     ],
     "viewsContainers": {
@@ -364,6 +373,10 @@
         {
           "command": "mqexplorer.openCommandPalette",
           "title": "MQExplorer: Open Command Palette"
+        },
+        {
+          "command": "mqexplorer.debugBrowseTest",
+          "title": "MQExplorer: Debug Browse Test"
         }
       ]
     }

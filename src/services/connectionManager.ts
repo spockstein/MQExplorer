@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import { EventEmitter } from 'events';
 import { ConnectionProfile, IBMMQConnectionProfile, RabbitMQConnectionProfile, KafkaConnectionProfile, ActiveMQConnectionProfile, AzureServiceBusConnectionProfile, AWSSQSConnectionProfile } from '../models/connectionProfile';
-import { IBMMQProvider } from '../providers/IBMMQProvider.simple';
+// import { IBMMQProvider } from '../providers/IBMMQProvider.simple';
 import { RabbitMQProvider } from '../providers/RabbitMQProvider';
 import { KafkaProvider } from '../providers/KafkaProvider';
 import { ActiveMQProvider } from '../providers/ActiveMQProvider';
@@ -284,7 +284,13 @@ export class ConnectionManager {
 
             switch (profile.providerType) {
                 case 'ibmmq':
+                    const { IBMMQProvider } = require('../providers/IBMMQProvider');
                     provider = new IBMMQProvider();
+
+                    // Set connection manager reference for event emission
+                    if ('setConnectionManager' in provider) {
+                        (provider as any).setConnectionManager(this);
+                    }
 
                     // Get the password from secure storage if needed
                     const ibmProfile = profile as IBMMQConnectionProfile;
