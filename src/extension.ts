@@ -14,6 +14,7 @@ import { testActiveMQOperations } from './test/activemqOperationsTest';
 import { testAzureServiceBusOperations } from './test/azureServiceBusOperationsTest';
 import { testAWSSQSOperations } from './test/awsSQSOperationsTest';
 import { testPutMessage } from './test/putMessageTest';
+import { testRealIBMMQ } from './test/realIBMMQTest';
 
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
@@ -154,6 +155,21 @@ export function activate(context: vscode.ExtensionContext) {
 		vscode.window.showInformationMessage('Put Message test completed. Check the output panel for results.');
 	});
 
+	// Register the test command for Put and Browse functionality
+	const { runPutAndBrowseTest } = require('./test/putAndBrowseTest');
+	const testPutAndBrowseDisposable = vscode.commands.registerCommand('mqexplorer.testPutAndBrowse', async () => {
+		vscode.window.showInformationMessage('Starting Put and Browse test...');
+		await runPutAndBrowseTest();
+		vscode.window.showInformationMessage('Put and Browse test completed. Check the output panel for results.');
+	});
+
+	// Register the test command for Real IBM MQ functionality
+	const testRealIBMMQDisposable = vscode.commands.registerCommand('mqexplorer.testRealIBMMQ', async () => {
+		vscode.window.showInformationMessage('Starting Real IBM MQ test...');
+		await testRealIBMMQ(context);
+		vscode.window.showInformationMessage('Real IBM MQ test completed. Check the output panel for results.');
+	});
+
 	// Register Command Palette integration
 	const commandPaletteDisposable = vscode.commands.registerCommand('mqexplorer.openCommandPalette', async () => {
 		// Show a quick pick with common MQExplorer commands
@@ -188,6 +204,8 @@ export function activate(context: vscode.ExtensionContext) {
 		testAzureServiceBusOperationsDisposable,
 		testAWSSQSOperationsDisposable,
 		testPutMessageDisposable,
+		testPutAndBrowseDisposable,
+		testRealIBMMQDisposable,
 		commandPaletteDisposable
 	);
 }

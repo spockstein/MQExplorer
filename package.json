@@ -209,6 +209,16 @@
         "command": "mqexplorer.debugBrowseTest",
         "title": "MQExplorer: Debug Browse Test",
         "icon": "$(debug)"
+      },
+      {
+        "command": "mqexplorer.testPutAndBrowse",
+        "title": "MQExplorer: Test Put and Browse",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "mqexplorer.testRealIBMMQ",
+        "title": "MQExplorer: Test Real IBM MQ",
+        "icon": "$(beaker)"
       }
     ],
     "viewsContainers": {
@@ -377,6 +387,14 @@
         {
           "command": "mqexplorer.debugBrowseTest",
           "title": "MQExplorer: Debug Browse Test"
+        },
+        {
+          "command": "mqexplorer.testPutAndBrowse",
+          "title": "MQExplorer: Test Put and Browse"
+        },
+        {
+          "command": "mqexplorer.testRealIBMMQ",
+          "title": "MQExplorer: Test Real IBM MQ"
         }
       ]
     }
