@@ -1,0 +1,548 @@
+// mqUtil.ts
+import * as mq from 'ibmmq';
+import {
+  MQC,
+  MQQueueManager,
+  MQObject as MQObjectHandle,
+  MQError as LibMQError,
+  MQMD,
+  MQPMO,
+  MQGMO,
+  MQCNO,
+  MQCD,
+  MQCSP,
+  MQOD
+} from 'ibmmq';
+
+// Define interfaces for type safety
+interface MQConnection {
+  hConn: MQQueueManager;
+  queueManagerName: string;
+}
+
+interface OpenedMQObject {
+  hObj: MQObjectHandle;
+  name: string;
+}
+
+// Interface for queue information
+interface QueueInfo {
+  name: string;
+  depth: number;
+  type: string;
+}
+
+// Configuration for connecting to the Queue Manager
+const config = {
+  qMgr: 'QM1', // Queue Manager name
+  //queueName: 'DEV.TEST.QUEUE', // Queue name for testing
+  queueName: 'DEV.QUEUE.1', // Queue name for testing
+  host: 'localhost', // Set to null or remove for server bindings
+  port: 1414,
+  channel: 'DEV.APP.SVRCONN',
+  user: '', // MQ user - populate if required by your MQ security
+  password: '' // MQ password - populate if required
+};
+
+// Connect to the Queue Manager
+async function connectToQueueManager(): Promise<MQConnection> {
+  return new Promise((resolve, reject) => {
+    const cno = new mq.MQCNO();
+
+    if (config.host) {
+      cno.Options = MQC.MQCNO_CLIENT_BINDING; // Explicitly client
+
+      const csp = new mq.MQCSP();
+      if (config.user) { // Only set security params if user is provided
+        csp.UserId = config.user;
+        csp.Password = config.password;
+        cno.SecurityParms = csp;
+      }
+
+
+      const cd = new mq.MQCD();
+      cd.ConnectionName = `${config.host}(${config.port})`;
+      cd.ChannelName = config.channel;
+      cno.ClientConn = cd;
+    } else {
+      cno.Options = MQC.MQCNO_STANDARD_BINDING; // Server binding
+    }
+
+    mq.Connx(config.qMgr, cno, (err: LibMQError | null, hConn: MQQueueManager) => {
+      if (err) {
+        reject(new Error(`Connection failed: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+      } else {
+        console.log('Connected to Queue Manager:', config.qMgr);
+        resolve({ hConn, queueManagerName: config.qMgr });
+      }
+    });
+  });
+}
+
+// Open a queue with specified options
+async function openQueue(hConn: MQQueueManager, queueName: string, openOptions: number): Promise<OpenedMQObject> {
+  return new Promise((resolve, reject) => {
+    const od = new mq.MQOD();
+    od.ObjectName = queueName;
+    od.ObjectType = MQC.MQOT_Q;
+
+    mq.Open(hConn, od, openOptions, (err: LibMQError | null, hObj: MQObjectHandle) => {
+      if (err) {
+        reject(new Error(`Open queue '${queueName}' failed: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+      } else {
+        console.log(`Opened queue: ${queueName} with handle ${hObj}`);
+        resolve({ hObj, name: queueName });
+      }
+    });
+  });
+}
+
+// Close an MQ object
+async function closeObject(hObj: MQObjectHandle, objectNameHint: string = "object"): Promise<void> {
+  return new Promise((resolve, reject) => {
+    mq.Close(hObj, 0, (err: LibMQError | null) => {
+      if (err) {
+        console.error(`Close ${objectNameHint} (handle ${hObj}) failed: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`);
+        reject(new Error(`Close ${objectNameHint} failed: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+      } else {
+        console.log(`${objectNameHint} (handle ${hObj}) closed successfully.`);
+        resolve();
+      }
+    });
+  });
+}
+
+// Put a message to a queue
+async function putMessage(hObj: MQObjectHandle, message: string, queueNameHint: string = "queue"): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const mqmd = new mq.MQMD(); // Defaults are usually fine for basic put
+    const pmo = new mq.MQPMO();
+    pmo.Options = MQC.MQPMO_NO_SYNCPOINT | MQC.MQPMO_NEW_MSG_ID | MQC.MQPMO_NEW_CORREL_ID;
+
+    const msgBuffer = Buffer.from(message);
+    mq.Put(hObj, mqmd, pmo, msgBuffer, (err: LibMQError | null) => {
+      if (err) {
+        reject(new Error(`Put message to ${queueNameHint} failed: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+      } else {
+        console.log(`Message put successfully to ${queueNameHint}: ${message.substring(0, 50)}...`);
+        resolve();
+      }
+    });
+  });
+}
+
+// Generic Get function (used by getMessage and browseMessage)
+async function internalGetMessage(
+  hObj: MQObjectHandle,
+  gmoOptions: number,
+  queueNameHint: string = "queue",
+  operationHint: string = "Get"
+): Promise<string | null> {
+  const mqmd = new mq.MQMD();
+  const gmo = new mq.MQGMO();
+  gmo.Options = gmoOptions;
+  gmo.WaitInterval = 0; // Default to NO_WAIT, can be overridden in gmoOptions
+
+  // Max message length to retrieve - adjust as needed for your application
+  const MAX_MSG_LEN = 4 * 1024 * 1024; // 4MB
+  const buffer = Buffer.alloc(MAX_MSG_LEN);
+
+  try {
+    const length = mq.GetSync(hObj, mqmd, gmo, buffer) as number;
+    if (length !== undefined && length > 0) {
+      const message = buffer.toString('utf8', 0, length);
+      console.log(`${operationHint} message from ${queueNameHint} (${length} bytes): ${message.substring(0, 50)}...`);
+      return message;
+    } else {
+      console.log(`No messages available on ${queueNameHint} for ${operationHint}.`);
+      return null;
+    }
+  } catch (err) {
+    if (err instanceof Error && 'mqrc' in err) {
+      const mqErr = err as LibMQError;
+      if (mqErr.mqrc === 2033) { // MQRC_NO_MSG_AVAILABLE
+        console.log(`No messages available on ${queueNameHint} for ${operationHint}.`);
+        return null;
+      } else if (mqErr.mqrc === 2079) { // MQRC_TRUNCATED_MSG_ACCEPTED
+        const message = buffer.toString('utf8');
+        console.warn(`${operationHint} message from ${queueNameHint} (TRUNCATED): ${message.substring(0, 50)}...`);
+        return message;
+      } else {
+        throw new Error(`${operationHint} message from ${queueNameHint} failed: MQCC=${mqErr.mqcc}, MQRC=${mqErr.mqrc}, Message=${mqErr.message}`);
+      }
+    } else {
+      throw err;
+    }
+  }
+}
+
+// Get a message from a queue (destructive)
+async function getMessage(hObj: MQObjectHandle, queueNameHint: string = "queue"): Promise<string | null> {
+  const gmoOptions = MQC.MQGMO_NO_SYNCPOINT | MQC.MQGMO_FAIL_IF_QUIESCING;
+  return internalGetMessage(hObj, gmoOptions, queueNameHint, "Get (destructive)");
+}
+
+// Browse a message from a queue (non-destructive)
+async function browseMessage(hObj: MQObjectHandle, browseGmoOption: number, queueNameHint: string = "queue"): Promise<string | null> {
+  const gmoOptions = browseGmoOption | MQC.MQGMO_FAIL_IF_QUIESCING;
+  return internalGetMessage(hObj, gmoOptions, queueNameHint, "Browse");
+}
+
+// Clear all messages from a queue using MQGET
+async function clearQueue(hConn: MQQueueManager, queueName: string): Promise<void> {
+  console.log(`Attempting to clear queue: ${queueName}`);
+  let openedQ: OpenedMQObject | null = null;
+  let messagesCleared = 0;
+  
+  try {
+    openedQ = await openQueue(hConn, queueName, MQC.MQOO_INPUT_EXCLUSIVE | MQC.MQOO_FAIL_IF_QUIESCING);
+    const hObj = openedQ.hObj;
+
+    const mqmd = new mq.MQMD();
+    const gmo = new mq.MQGMO();
+    gmo.Options = MQC.MQGMO_NO_WAIT | MQC.MQGMO_NO_SYNCPOINT | MQC.MQGMO_FAIL_IF_QUIESCING;
+    const buffer = Buffer.alloc(1024); // Small buffer is fine, we don't care about content
+
+    while (true) {
+      try {
+        const length = mq.GetSync(hObj, mqmd, gmo, buffer) as number;
+        if (length !== undefined && length >= 0) {
+          messagesCleared++;
+        }
+      } catch (err) {
+        if (err instanceof Error && 'mqrc' in err) {
+          const mqErr = err as LibMQError;
+          if (mqErr.mqrc === 2033) { // MQRC_NO_MSG_AVAILABLE
+            break; // No more messages, exit loop
+          }
+          throw err; // Re-throw any other MQ errors
+        }
+        throw err; // Re-throw non-MQ errors
+      }
+    }
+
+    console.log(`Queue ${queueName} cleared. ${messagesCleared} messages removed.`);
+  } catch (err) {
+    console.error(`Error during clearQueue for ${queueName}:`, err);
+    throw err; // Re-throw to be caught by main or caller
+  } finally {
+    if (openedQ && openedQ.hObj) {
+      try {
+        await closeObject(openedQ.hObj, queueName);
+      } catch (closeErr) {
+        console.error(`Error closing queue ${queueName} after clear attempt:`, closeErr);
+      }
+    }
+  }
+}
+
+// Get the current depth of a queue with authorization check
+async function getQueueDepth(hConn: MQQueueManager, queueName: string): Promise<number | null> {
+  let openedQ: OpenedMQObject | null = null;
+  try {
+    // Open queue for inquire
+    openedQ = await openQueue(hConn, queueName, MQC.MQOO_INQUIRE | MQC.MQOO_FAIL_IF_QUIESCING);
+    
+    return new Promise((resolve, reject) => {
+      const selectors = [new mq.MQAttr(MQC.MQIA_CURRENT_Q_DEPTH)];
+      
+      mq.Inq(openedQ!.hObj, selectors, (err: LibMQError | null, jsSelectors: mq.MQAttr[]) => {
+        if (err) {
+          if (err.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
+            resolve(null); // Skip unauthorized queues silently
+          } else {
+            reject(new Error(`Failed to get depth for queue ${queueName}: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+          }
+        } else {
+          resolve(jsSelectors[0].value as number);
+        }
+      });
+    });
+  } catch (err) {
+    if (err instanceof Error && 'mqrc' in err) {
+      const mqErr = err as LibMQError;
+      if (mqErr.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
+        return null; // Skip unauthorized queues silently
+      }
+    }
+    throw err;
+  } finally {
+    if (openedQ && openedQ.hObj) {
+      try {
+        await closeObject(openedQ.hObj, queueName);
+      } catch (closeErr) {
+        console.error(`Error closing queue ${queueName} after depth inquiry:`, closeErr);
+      }
+    }
+  }
+}
+
+// Get a list of all authorized queues
+async function listQueues(hConn: MQQueueManager): Promise<QueueInfo[]> {
+  const queues: QueueInfo[] = [];
+  const seenQueues = new Set<string>();
+
+  // Define patterns to try, starting with more specific ones
+  const queuePatterns = [
+    'DEV.*',           // Development queues
+    'APP.*',           // Application queues
+    'TEST.*',          // Test queues
+    '*.*',         // Generic queues
+    'SYSTEM.DEFAULT.*' // Default system queues
+  ];
+
+  // Try each pattern
+  for (const pattern of queuePatterns) {
+    try {
+      const q = await openQueue(hConn, pattern, 
+        MQC.MQOO_INQUIRE | MQC.MQOO_BROWSE | MQC.MQOO_FAIL_IF_QUIESCING);
+      
+      if (q) {
+        try {
+          // For wildcard patterns, the queue name returned is the first matching queue
+          // Check if we've seen this queue before
+          if (!seenQueues.has(q.name)) {
+            seenQueues.add(q.name);
+            const depth = await getQueueDepth(hConn, q.name);
+            if (depth !== null) {
+              queues.push({
+                name: q.name,
+                depth: depth,
+                type: 'Local'
+              });
+            }
+
+            // Try to find more queues that match this pattern
+            let currentName = q.name;
+            while (true) {
+              try {
+                // Try to open the "next" queue that matches the pattern
+                const nextName = incrementQueueName(currentName);
+                if (!nextName) break;
+
+                const nextQ = await openQueue(hConn, nextName, 
+                  MQC.MQOO_INQUIRE | MQC.MQOO_BROWSE | MQC.MQOO_FAIL_IF_QUIESCING);
+                
+                if (nextQ && !seenQueues.has(nextQ.name)) {
+                  seenQueues.add(nextQ.name);
+                  const depth = await getQueueDepth(hConn, nextQ.name);
+                  if (depth !== null) {
+                    queues.push({
+                      name: nextQ.name,
+                      depth: depth,
+                      type: 'Local'
+                    });
+                  }
+                  await closeObject(nextQ.hObj);
+                  currentName = nextQ.name;
+                } else {
+                  break;
+                }
+              } catch (err) {
+                if (err instanceof Error && 'mqrc' in err) {
+                  const mqErr = err as LibMQError;                  if (mqErr.mqrc === 2085 || // MQRC_UNKNOWN_OBJECT_NAME
+                      mqErr.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
+                    // If queue doesn't exist or we're not authorized, try the next pattern
+                    break;
+                  }
+                }
+                // For other errors, just try the next queue
+                break;
+              }
+            }
+          }
+        } finally {
+          await closeObject(q.hObj);
+        }
+      }
+    } catch (err) {
+      if (err instanceof Error && 'mqrc' in err) {
+        const mqErr = err as LibMQError;        if (mqErr.mqrc !== 2085 && // MQRC_UNKNOWN_OBJECT_NAME
+            mqErr.mqrc !== 2035) { // MQRC_NOT_AUTHORIZED
+          // Log non-authorization and non-unknown object errors
+          console.warn(`Error accessing queue pattern ${pattern}:`, mqErr.message);
+        }
+      }
+      // Continue with next pattern regardless of error
+      continue;
+    }
+  }
+
+  // As a last resort, try some common queue names directly
+  const commonQueues = [
+  ];
+
+  for (const qName of commonQueues) {
+    if (!seenQueues.has(qName)) {
+      try {
+        const q = await openQueue(hConn, qName,
+          MQC.MQOO_INQUIRE | MQC.MQOO_BROWSE | MQC.MQOO_FAIL_IF_QUIESCING);
+        
+        if (q) {
+          seenQueues.add(qName);
+          const depth = await getQueueDepth(hConn, qName);
+          if (depth !== null) {
+            queues.push({
+              name: qName,
+              depth: depth,
+              type: 'Local'
+            });
+          }
+          await closeObject(q.hObj);
+        }
+      } catch (err) {
+        // Ignore errors for individual queues
+        continue;
+      }
+    }
+  }
+
+  return queues;
+}
+
+// Helper function to increment queue name for iteration
+function incrementQueueName(qName: string): string | null {
+  // Find the last number in the queue name
+  const match = qName.match(/(\d+)$/);
+  if (match) {
+    const num = parseInt(match[1], 10);
+    const prefix = qName.slice(0, -match[1].length);
+    return prefix + (num + 1).toString().padStart(match[1].length, '0');
+  }
+  
+  // If no number found, try appending .1
+  if (!qName.includes('.')) {
+    return qName + '.1';
+  }
+  
+  return null;
+}
+
+// Disconnect from the Queue Manager
+async function disconnect(hConn: MQQueueManager, qmNameHint: string = "QueueManager"): Promise<void> {
+  return new Promise((resolve, reject) => {
+    mq.Disc(hConn, (err: LibMQError | null) => {
+      if (err) {
+        reject(new Error(`Disconnect from ${qmNameHint} failed: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+      } else {
+        console.log(`Disconnected from ${qmNameHint}.`);
+        resolve();
+      }
+    });
+  });
+}
+
+// Main function to demonstrate operations
+async function main() {
+  let mqConn: MQConnection | null = null;
+  let openedQ: OpenedMQObject | null = null;
+
+  try {
+    console.log("--- Connecting to Queue Manager ---");
+    mqConn = await connectToQueueManager();    // --- List Authorized Queues and Their Depths ---
+    console.log("\n--- Listing Authorized Queues and Their Depths ---");
+    const queues = await listQueues(mqConn.hConn);
+    if (queues.length > 0) {
+      console.log(`Found ${queues.length} authorized queues:`);
+      queues.forEach(q => {
+        console.log(`Queue: ${q.name}, Type: ${q.type}, Current Depth: ${q.depth}`);
+      });
+    } else {
+      console.log("No authorized queues found.");
+    }
+
+    const testQueueName = config.queueName;
+
+    // --- Test PUT ---
+    console.log(`\n--- Testing PUT to ${testQueueName} ---`);
+    openedQ = await openQueue(mqConn.hConn, testQueueName, MQC.MQOO_OUTPUT | MQC.MQOO_FAIL_IF_QUIESCING);
+    const messageToPut = `Hello from TypeScript at ${new Date().toISOString()}`;
+    await putMessage(openedQ.hObj, messageToPut, testQueueName);
+    await putMessage(openedQ.hObj, "Second message for browsing and getting.", testQueueName);
+    await closeObject(openedQ.hObj, testQueueName);
+    openedQ = null;
+
+    // --- Test BROWSE ---
+    console.log(`\n--- Testing BROWSE on ${testQueueName} ---`);
+    openedQ = await openQueue(mqConn.hConn, testQueueName, MQC.MQOO_INPUT_SHARED | MQC.MQOO_BROWSE | MQC.MQOO_FAIL_IF_QUIESCING);
+    let browsedMsg = await browseMessage(openedQ.hObj, MQC.MQGMO_BROWSE_FIRST, testQueueName);
+    if (browsedMsg) console.log("First browsed message content:", browsedMsg.substring(0,100));
+    browsedMsg = await browseMessage(openedQ.hObj, MQC.MQGMO_BROWSE_NEXT, testQueueName);
+    if (browsedMsg) console.log("Second browsed message content:", browsedMsg.substring(0,100));
+    await closeObject(openedQ.hObj, testQueueName);
+    openedQ = null;
+
+    // --- Test GET (destructive) ---
+    console.log(`\n--- Testing GET from ${testQueueName} ---`);
+    openedQ = await openQueue(mqConn.hConn, testQueueName, MQC.MQOO_INPUT_EXCLUSIVE | MQC.MQOO_FAIL_IF_QUIESCING); // Exclusive for GET
+    let gotMsg = await getMessage(openedQ.hObj, testQueueName);
+    if (gotMsg) console.log("First got message content:", gotMsg.substring(0,100));
+    gotMsg = await getMessage(openedQ.hObj, testQueueName); // Attempt to get the second message
+    if (gotMsg) console.log("Second got message content:", gotMsg.substring(0,100));
+    gotMsg = await getMessage(openedQ.hObj, testQueueName); // Attempt to get a third (should be none)
+    if (!gotMsg) console.log("No more messages to get, as expected.");
+    await closeObject(openedQ.hObj, testQueueName);
+    openedQ = null;
+
+    // --- Test CLEAR QUEUE ---
+    console.log(`\n--- Testing CLEAR QUEUE for ${testQueueName} ---`);
+    // Put some messages to clear
+    openedQ = await openQueue(mqConn.hConn, testQueueName, MQC.MQOO_OUTPUT | MQC.MQOO_FAIL_IF_QUIESCING);
+    await putMessage(openedQ.hObj, "Message 1 for clearing", testQueueName);
+    await putMessage(openedQ.hObj, "Message 2 for clearing", testQueueName);
+    await putMessage(openedQ.hObj, "Message 3 for clearing", testQueueName);
+    await closeObject(openedQ.hObj, testQueueName);
+    openedQ = null;
+
+    await clearQueue(mqConn.hConn, testQueueName);
+
+    // Verify queue is empty
+    openedQ = await openQueue(mqConn.hConn, testQueueName, MQC.MQOO_INPUT_SHARED | MQC.MQOO_BROWSE | MQC.MQOO_FAIL_IF_QUIESCING);
+    browsedMsg = await browseMessage(openedQ.hObj, MQC.MQGMO_BROWSE_FIRST, testQueueName);
+    if (!browsedMsg) {
+      console.log(`Queue ${testQueueName} is empty after clearing, as expected.`);
+    } else {
+      console.warn(`Queue ${testQueueName} still has messages after clearing!`);
+    }
+    await closeObject(openedQ.hObj, testQueueName);
+    openedQ = null;
+
+
+  } catch (err: unknown) {
+    if (err instanceof Error && 'mqcc' in err && 'mqrc' in err) {
+      const mqErr = err as LibMQError;
+      console.error(`\n--- MQ Operation Failed ---`);
+      console.error(`Message: ${mqErr.message}`);
+      console.error(`MQCC: ${mqErr.mqcc}`);
+      console.error(`MQRC: ${mqErr.mqrc}`);
+      if (mqErr.stack) console.error(`Stack: ${mqErr.stack}`);
+    } else if (err instanceof Error) {
+      console.error(`\n--- JavaScript Error ---`);
+      console.error(`Message: ${err.message}`);
+      if (err.stack) console.error(`Stack: ${err.stack}`);
+    } else {
+      console.error('\n--- Unknown Error Type ---');
+      console.error(err);
+    }
+  } finally {
+    console.log("\n--- Cleaning up ---");
+    if (openedQ && openedQ.hObj) {
+      try {
+        await closeObject(openedQ.hObj, openedQ.name);
+      } catch (closeErr) {
+        // Logged in closeObject
+      }
+    }
+    if (mqConn) {
+      try {
+        await disconnect(mqConn.hConn, mqConn.queueManagerName);
+      } catch (discErr) {
+        // Logged in disconnect
+      }
+    }
+    console.log("--- Main function finished ---");
+  }
+}
+
+// Run the main function
+main();
