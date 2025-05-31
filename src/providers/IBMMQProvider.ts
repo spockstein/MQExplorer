@@ -1192,67 +1192,66 @@ export class IBMMQProvider implements IMQProvider {
     }
 
     /**
-     * Discover queues without admin privileges using direct queue access
+     * Discover queues without admin privileges using PCF pattern-based discovery
+     * Uses A*, B*, C*... Z* patterns to discover all queues starting with each letter
      */
     private async discoverQueuesWithoutAdmin(filter: string = '*'): Promise<string[]> {
-        this.log(`🔍 Using non-admin queue discovery method`);
+        this.log(`🔍 Using pattern-based PCF queue discovery (non-admin method)`);
 
         const discoveredQueues: string[] = [];
         const seenQueues = new Set<string>();
 
-        // Strategy: Try to open queues using common naming patterns
-        // This works with regular user permissions
-        const queuePatterns = [
-            // Common application queue patterns
-            'DEV.QUEUE.1', 'DEV.QUEUE.2', 'DEV.QUEUE.3', 'DEV.QUEUE.4', 'DEV.QUEUE.5',
-            'APP.QUEUE.1', 'APP.QUEUE.2', 'APP.QUEUE.3',
-            'TEST.QUEUE.1', 'TEST.QUEUE.2', 'TEST.QUEUE.3',
-            'LOCAL.QUEUE.1', 'LOCAL.QUEUE.2', 'LOCAL.QUEUE.3',
-            'USER.QUEUE.1', 'USER.QUEUE.2', 'USER.QUEUE.3',
-            'SAMPLE.QUEUE.1', 'SAMPLE.QUEUE.2', 'SAMPLE.QUEUE.3',
-            // Try some system queues that might be accessible
-            'SYSTEM.DEFAULT.LOCAL.QUEUE'
+        // Generate all 26 letter patterns (A*, B*, C*, ..., Z*) plus numbers and special chars
+        const letterPatterns: string[] = [];
+        for (let i = 0; i < 26; i++) {
+            const letter = String.fromCharCode(65 + i); // A=65, B=66, etc.
+            letterPatterns.push(`${letter}*`);
+        }
+
+        // Add some common numeric and special patterns
+        const additionalPatterns = [
+            '0*', '1*', '2*', '3*', '4*', '5*', '6*', '7*', '8*', '9*', // Numbers
+            '_*', // Underscore
+            '*' // Catch-all as last resort
         ];
 
-        for (const queueName of queuePatterns) {
-            if (seenQueues.has(queueName)) {
-                continue;
-            }
+        const allPatterns = [...letterPatterns, ...additionalPatterns];
 
+        this.log(`🔍 Searching with ${allPatterns.length} patterns: ${allPatterns.slice(0, 5).join(', ')}...`);
+
+        // Try PCF discovery for each pattern
+        for (const pattern of allPatterns) {
             try {
-                // Try to open the queue to see if it exists and we have access
-                const q = await this.openQueue(queueName, mq.MQC.MQOO_INQUIRE | mq.MQC.MQOO_FAIL_IF_QUIESCING);
+                this.log(`🔍 Trying pattern: ${pattern}`);
+                const queuesForPattern = await this.discoverQueuesWithPCFPattern(pattern);
 
-                if (q) {
-                    seenQueues.add(queueName);
+                // Add discovered queues to our collection
+                for (const queueName of queuesForPattern) {
+                    if (!seenQueues.has(queueName)) {
+                        seenQueues.add(queueName);
 
-                    // Verify we can get depth (authorization check)
-                    const depth = await this.getQueueDepthSimple(queueName);
-                    if (depth !== null) {
-                        discoveredQueues.push(queueName);
-                        this.log(`✅ Discovered accessible queue: ${queueName} (depth: ${depth})`);
-                    } else {
-                        this.log(`⚠️ Queue ${queueName} exists but not authorized for depth inquiry`);
-                    }
-
-                    await this.closeObject(q.hObj, queueName);
-                }
-            } catch (err) {
-                if (err instanceof Error && 'mqrc' in err) {
-                    const mqErr = err as any;
-                    if (mqErr.mqrc === 2085) { // MQRC_UNKNOWN_OBJECT_NAME
-                        // Queue doesn't exist, skip silently
-                        continue;
-                    } else if (mqErr.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
-                        // Not authorized, skip silently
-                        continue;
-                    } else {
-                        // Other error, log but continue
-                        this.log(`⚠️ Error checking queue ${queueName}: MQRC=${mqErr.mqrc}`);
-                        continue;
+                        // Verify we can access the queue and get its depth
+                        try {
+                            const depth = await this.getQueueDepthSimple(queueName);
+                            if (depth !== null) {
+                                discoveredQueues.push(queueName);
+                                this.log(`✅ Discovered accessible queue: ${queueName} (depth: ${depth})`);
+                            } else {
+                                this.log(`⚠️ Queue ${queueName} exists but not authorized for depth inquiry`);
+                            }
+                        } catch (depthError) {
+                            this.log(`⚠️ Error checking depth for ${queueName}: ${(depthError as Error).message}`);
+                        }
                     }
                 }
-                // For other errors, continue with next queue
+
+                if (queuesForPattern.length > 0) {
+                    this.log(`📋 Pattern ${pattern} found ${queuesForPattern.length} queues`);
+                }
+
+            } catch (patternError) {
+                this.log(`⚠️ Pattern ${pattern} discovery failed: ${(patternError as Error).message}`);
+                // Continue with next pattern
                 continue;
             }
         }
@@ -1264,8 +1263,143 @@ export class IBMMQProvider implements IMQProvider {
                 queue.toLowerCase().includes(filter.toLowerCase())
             );
 
-        this.log(`📋 Non-admin discovery found ${filteredQueues.length} accessible queues: [${filteredQueues.join(', ')}]`);
+        this.log(`📋 Pattern-based discovery found ${filteredQueues.length} accessible queues: [${filteredQueues.join(', ')}]`);
         return filteredQueues;
+    }
+
+    /**
+     * Discover queues using PCF command with a specific pattern
+     */
+    private async discoverQueuesWithPCFPattern(pattern: string): Promise<string[]> {
+        this.log(`🔍 PCF pattern discovery for: ${pattern}`);
+
+        let hCmdQ: { hObj: mq.MQObject; name: string } | null = null;
+        let hReplyQ: { hObj: mq.MQObject; name: string } | null = null;
+
+        try {
+            // Try to open command queue (this might fail for non-admin users)
+            try {
+                const commandQueueName = "SYSTEM.ADMIN.COMMAND.QUEUE";
+                hCmdQ = await this.openQueue(commandQueueName, mq.MQC.MQOO_OUTPUT | mq.MQC.MQOO_FAIL_IF_QUIESCING);
+            } catch (cmdQueueError) {
+                // If we can't open command queue, fall back to direct pattern testing
+                this.log(`⚠️ Cannot access command queue for pattern ${pattern}, using direct testing`);
+                return await this.testPatternDirectly(pattern);
+            }
+
+            // Create dynamic reply queue
+            const replyOd = new mq.MQOD();
+            replyOd.ObjectName = "SYSTEM.DEFAULT.MODEL.QUEUE";
+            replyOd.DynamicQName = `TEMP.PATTERN.${Date.now()}`;
+            replyOd.ObjectType = mq.MQC.MQOT_Q;
+
+            const replyHObj = await new Promise<mq.MQObject>((resolve, reject) => {
+                // @ts-ignore - IBM MQ types are incorrect
+                mq.Open(this.connectionHandle!, replyOd, mq.MQC.MQOO_INPUT_EXCLUSIVE, (err: any, hObj: mq.MQObject) => {
+                    if (err) {
+                        reject(new Error(`Failed to create pattern reply queue: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+                    } else {
+                        resolve(hObj);
+                    }
+                });
+            });
+
+            const actualReplyQName = replyOd.ObjectName.trim();
+            hReplyQ = { hObj: replyHObj, name: actualReplyQName };
+            this.log(`✅ Created pattern reply queue: ${actualReplyQName}`);
+
+            // Build and send PCF command for this pattern
+            const pcfMessage = this.buildProperPCFInquireQueuesCommand(pattern);
+            await this.sendProperPCFCommand(hCmdQ.hObj, pcfMessage, actualReplyQName);
+
+            // Get and parse responses
+            const queueNames = await this.parseAllPCFResponses(hReplyQ.hObj);
+            this.log(`✅ PCF pattern ${pattern} returned ${queueNames.length} queues`);
+
+            return queueNames;
+
+        } finally {
+            // Clean up queues
+            if (hReplyQ && hReplyQ.hObj) {
+                try {
+                    await this.closeObject(hReplyQ.hObj, hReplyQ.name);
+                } catch (closeErr) {
+                    this.log(`⚠️ Error closing pattern reply queue: ${(closeErr as Error).message}`);
+                }
+            }
+            if (hCmdQ && hCmdQ.hObj) {
+                try {
+                    await this.closeObject(hCmdQ.hObj, hCmdQ.name);
+                } catch (closeErr) {
+                    this.log(`⚠️ Error closing command queue: ${(closeErr as Error).message}`);
+                }
+            }
+        }
+    }
+
+    /**
+     * Fallback method to test pattern directly by trying common queue names
+     */
+    private async testPatternDirectly(pattern: string): Promise<string[]> {
+        this.log(`🔍 Direct pattern testing for: ${pattern}`);
+
+        const discoveredQueues: string[] = [];
+        const patternPrefix = pattern.replace('*', '');
+
+        // Generate comprehensive queue names that match the pattern
+        const commonSuffixes = [
+            // Standard queue patterns
+            'EV.QUEUE.1', 'EV.QUEUE.2', 'EV.QUEUE.3', 'EV.QUEUE.4', 'EV.QUEUE.5',
+            'EV.QUEUE.6', 'EV.QUEUE.7', 'EV.QUEUE.8', 'EV.QUEUE.9', 'EV.QUEUE.10',
+            // Short patterns
+            'QUEUE.1', 'QUEUE.2', 'QUEUE.3', 'QUEUE.4', 'QUEUE.5',
+            'QUEUE', 'Q1', 'Q2', 'Q3', 'Q4', 'Q5',
+            // Application patterns
+            'APP.QUEUE.1', 'APP.QUEUE.2', 'APP.QUEUE.3',
+            'EST.QUEUE.1', 'EST.QUEUE.2', 'EST.QUEUE.3',
+            'ATA.QUEUE.1', 'ATA.QUEUE.2', 'ATA.QUEUE.3',
+            // Functional patterns
+            'INPUT', 'OUTPUT', 'REQUEST', 'REPLY',
+            'INPUT.QUEUE', 'OUTPUT.QUEUE', 'REQUEST.QUEUE', 'REPLY.QUEUE',
+            // System patterns
+            'LOCAL.QUEUE', 'REMOTE.QUEUE', 'MODEL.QUEUE',
+            'DEFAULT.LOCAL.QUEUE', 'DEFAULT.REMOTE.QUEUE',
+            'YSTEM.DEFAULT.LOCAL.QUEUE', 'YSTEM.ADMIN.COMMAND.QUEUE',
+            // Additional common patterns
+            'B.QUEUE.1', 'B.QUEUE.2', 'B.QUEUE.3',
+            'AMPLE.QUEUE.1', 'AMPLE.QUEUE.2', 'AMPLE.QUEUE.3'
+        ];
+
+        for (const suffix of commonSuffixes) {
+            const queueName = `${patternPrefix}${suffix}`;
+
+            try {
+                // Try to open the queue to see if it exists
+                const q = await this.openQueue(queueName, mq.MQC.MQOO_INQUIRE | mq.MQC.MQOO_FAIL_IF_QUIESCING);
+
+                if (q) {
+                    discoveredQueues.push(queueName);
+                    this.log(`✅ Direct test found queue: ${queueName}`);
+                    await this.closeObject(q.hObj, queueName);
+                }
+            } catch (err) {
+                if (err instanceof Error && 'mqrc' in err) {
+                    const mqErr = err as any;
+                    if (mqErr.mqrc === 2085) { // MQRC_UNKNOWN_OBJECT_NAME
+                        // Queue doesn't exist, continue
+                        continue;
+                    } else if (mqErr.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
+                        // Not authorized, continue
+                        continue;
+                    }
+                }
+                // For other errors, continue
+                continue;
+            }
+        }
+
+        this.log(`📋 Direct pattern test for ${pattern} found ${discoveredQueues.length} queues`);
+        return discoveredQueues;
     }
 
     /**

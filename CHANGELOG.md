@@ -2,7 +2,7 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
-## [0.0.1] - 2023-10-15
+## [0.0.1] - 2025-05-15
 
 ### Added
 - Initial release with basic IBM MQ functionality
@@ -24,7 +24,7 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
   - Set message properties (correlation ID, reply-to queue, etc.)
   - Load message payload from a file
 
-  ## [0.0.2] - 2023-10-16
+  ## [0.0.2] - 2025-05-16
   ### Added
   - Support for multiple messaging providers (RabbitMQ, Kafka, ActiveMQ, Azure Service Bus, AWS SQS)
   - Provider-specific connection profiles and forms
@@ -35,7 +35,7 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
   - Provider-specific message formats (JSON, XML, etc.)
   - Provider-specific security features (TLS, authentication, etc.)
 
-  ##  [0.0.3] - 2023-10-17
+  ##  [0.0.3] - 2025-05-17
   ### Added
   - Support for message filtering and searching
   - Support for batch operations (delete multiple messages, etc.)
@@ -47,68 +47,24 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
   - Support for documentation and troubleshooting
   - Support for testing and refinement
 
-  ## [0.0.4] - 2023-10-18
-  ### Added
-  - Support for message conversion and transformation
-  - Support for message encryption and decryption
-  - Support for message compression and decompression
-  - Support for message deduplication
-  - Support for message prioritization
-  - Support for message expiration
-  - Support for message persistence
-  - Support for message delivery guarantees
-  - Support for message ordering
-  - Support for message transactions
-  - Support for message auditing and logging
-
-  ## [0.0.5] - 2023-10-19
-  ### Added
-  - Support for message encryption and decryption
-  - Support for message compression and decompression
-  - Support for message deduplication
-  - Support for message prioritization
-  - Support for message expiration
-  - Support for message persistence
-  - Support for message delivery guarantees
-  - Support for message ordering
-  - Support for message transactions
-  - Support for message auditing and logging
-  - Support for message tracing and debugging
-  - Support for performance optimization (pagination, etc.)
-  - Support for integration with development workflow (e.g., testing, debugging)
-  - Support for customization and settings
-  - Support for documentation and troubleshooting
-  - Support for testing and refinement
-
-  ## [0.0.6] - 2023-10-20
-  ### Added
-  - Support for message encryption and decryption
-  - Support for message compression and decompression
-  - Support for message deduplication
-  - Support for message prioritization
-  - Support for message expiration
-  - Support for message persistence
-  - Support for message delivery guarantees
-  - Support for message ordering
-  - Support for message transactions
-  - Support for message auditing and logging
-  - Support for message tracing and debugging
-  - Support for performance optimization (pagination, etc.)
-  - Support for integration with development workflow (e.g., testing, debugging)
-  - Support for customization and settings
-  - Support for documentation and troubleshooting
-  - Support for testing and refinement
-
-  ## [0.0.7] - 2023-10-21
+  ## [0.0.6] - 2025-05-20
   ### Added 
-  - Support for message encryption and decryption
-  - Support for message compression and decompression
-  - Support for message deduplication
-  - Support for message prioritization
-  - Support for message expiration
-  - Support for message persistence
-  - Support for message delivery guarantees
-  - Support for message ordering
-  - Support for message transactions
-  - Support for message auditing and logging
-  - Support for message tracing and debugging
+  - Bug fixes
+  - Refactoring
+  - Code cleanup
+  - Performance improvements
+  - Documentation updates
+  - Testing improvements
+
+  ## [0.0.7] - 2025-05-21
+  ### Added 
+  - Bug fixes
+  - Refactoring
+  - Code cleanup
+  - Performance improvements
+  - Documentation updates
+  - Testing improvements
+
+  ## [0.0.8] - 2025-05-30
+  ### Added
+   enhance non-admin queue discovery with PCF pattern-based approach
