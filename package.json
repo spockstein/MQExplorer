@@ -227,7 +227,7 @@
         {
           "id": "mqexplorer-container",
           "title": "MQ Explorer",
-          "icon": "resources/icon.svg"
+          "icon": "resources/icon.png"
         }
       ]
     },
