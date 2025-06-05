@@ -67,4 +67,9 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
 
   ## [0.0.8] - 2025-05-30
   ### Added
-   enhance non-admin queue discovery with PCF pattern-based approach
+  - Enhance non-admin queue discovery with PCF pattern-based approach
+
+  ## [0.0.9] - 2025-06-04
+  ### Added
+  - Bug fixes and icon update
+  
