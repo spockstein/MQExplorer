@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- MQ Explorer Activity Bar Icon - Based on the black square with MQ design -->
+  <!-- Follows VS Code guidelines: 24x24, single color, centered -->
+
+  <g fill="currentColor">
+    <!-- Black square background -->
+    <rect x="2" y="2" width="20" height="20" rx="1" fill="currentColor"/>
+
+    <!-- White curved top element -->
+    <path d="M2 6 Q12 3 22 6 L22 2 L2 2 Z" fill="white"/>
+
+    <!-- White curved bottom element -->
+    <path d="M2 18 Q12 21 22 18 L22 22 L2 22 Z" fill="white"/>
+
+    <!-- MQ Text -->
+    <g fill="white" font-family="Arial, sans-serif" font-weight="bold">
+      <!-- Letter M -->
+      <path d="M4.5 8.5 L4.5 15.5 L5.8 15.5 L5.8 11.2 L7.2 13.8 L8.8 13.8 L10.2 11.2 L10.2 15.5 L11.5 15.5 L11.5 8.5 L9.5 8.5 L8 11.8 L6.5 8.5 Z"/>
+
+      <!-- Letter Q -->
+      <circle cx="16.5" cy="12" r="3" stroke="white" stroke-width="1.2" fill="none"/>
+      <path d="M18.2 14.2 L19.5 15.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>
