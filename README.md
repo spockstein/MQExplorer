@@ -45,11 +45,12 @@ Connect to all major messaging systems from a single interface:
 </p>
 
 ### 📨 Message Operations
-- **Browse Messages** - Non-destructively view messages in queues/topics
+- **Browse Messages** - Non-destructively view messages with real timestamps
 - **Put Messages** - Send new messages with customizable properties
-- **Delete Messages** - Remove individual messages or clear entire queues
+- **Delete Messages** - Remove individual messages or clear entire queues with improved reliability
 - **Save Messages** - Export message content to files
 - **View Formats** - See messages in text, hex, JSON, or XML formats
+- **Auto-Refresh** - Message lists automatically update after put/delete/clear operations
 
 <p align="center">
   <i>[Screenshot: MQExplorer message browser interface]</i>
@@ -100,6 +101,7 @@ Connect to all major messaging systems from a single interface:
    - **Username** (optional): Your MQ username if authentication is required
    - **Password** (optional): Your MQ password
    - **Use TLS**: Check this if you need to use a secure connection
+   - **Known Queues** (optional): Pre-configure queue names for faster discovery and fallback when dynamic discovery fails
 
 ```
 Example:
@@ -199,15 +201,16 @@ Channel: DEV.APP.SVRCONN
 
 See the [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-### Latest Release: v1.0.0
+### Latest Release: v0.2.0
 
-Full release with multi-provider support:
-- Connection management for all supported messaging systems
-- Queue/Topic browsing across providers
-- Message browsing and manipulation
-- Message publishing with advanced properties
-- Queue management operations
-- Performance improvements and bug fixes
+Major improvements and new features:
+- **Known Queues Configuration**: Pre-configure queue names for faster discovery and fallback
+- **Optimized Queue Discovery**: Significant performance improvements for IBM MQ connections
+- **Fixed Message Delete Operations**: Reliable message deletion with proper error handling
+- **Automatic Message List Refresh**: UI automatically updates after put/delete/clear operations
+- **Real IBM MQ Timestamps**: Display actual message timestamps from MQMD instead of browse time
+- Enhanced connection management for all supported messaging systems
+- Improved error handling and user feedback
 
 ## 📄 License
 

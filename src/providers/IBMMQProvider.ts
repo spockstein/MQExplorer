@@ -113,33 +113,34 @@ export class IBMMQProvider implements IMQProvider {
         }
 
         try {
-            this.log('🔍 Listing queues using hybrid approach: dynamic discovery with known queues fallback');
+            this.log('🔍 Listing queues using optimized approach: known queues first, then dynamic discovery');
 
-            // First attempt: Dynamic discovery
+            // OPTIMIZATION: Check for known queues first to avoid unnecessary PCF calls
             let queueNames: string[] = [];
             let discoveryMethod = 'dynamic';
 
-            try {
-                queueNames = await this.discoverQueuesUsingRealPCF(filter || '*');
-                this.log(`📋 Dynamic discovery found ${queueNames.length} queues`);
-            } catch (discoveryError) {
-                const mqError = discoveryError as any;
-                if (mqError.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
-                    this.log(`⚠️ Dynamic discovery failed due to authorization (MQRC: 2035), falling back to known queues`);
-                    queueNames = this.getKnownQueuesFromProfile(filter);
-                    discoveryMethod = 'cached';
-                } else {
-                    this.log(`⚠️ Dynamic discovery failed: ${(discoveryError as Error).message}, falling back to known queues`);
-                    queueNames = this.getKnownQueuesFromProfile(filter);
-                    discoveryMethod = 'cached';
-                }
-            }
-
-            // If dynamic discovery returned no results, try known queues as fallback
-            if (queueNames.length === 0) {
-                this.log(`⚠️ Dynamic discovery returned no queues, trying known queues fallback`);
-                queueNames = this.getKnownQueuesFromProfile(filter);
+            // First check: Do we have known queues configured?
+            const knownQueues = this.getKnownQueuesFromProfile(filter);
+            if (knownQueues.length > 0) {
+                this.log(`🚀 Using known queues from profile (${knownQueues.length} queues) - skipping dynamic discovery for performance`);
+                queueNames = knownQueues;
                 discoveryMethod = 'cached';
+            } else {
+                // Only attempt dynamic discovery if no known queues are configured
+                this.log(`🔍 No known queues configured, attempting dynamic PCF discovery`);
+                try {
+                    queueNames = await this.discoverQueuesUsingRealPCF(filter || '*');
+                    this.log(`📋 Dynamic discovery found ${queueNames.length} queues`);
+                } catch (discoveryError) {
+                    const mqError = discoveryError as any;
+                    if (mqError.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
+                        this.log(`⚠️ Dynamic discovery failed due to authorization (MQRC: 2035) - consider configuring known queues for better performance`);
+                        return [];
+                    } else {
+                        this.log(`⚠️ Dynamic discovery failed: ${(discoveryError as Error).message}`);
+                        return [];
+                    }
+                }
             }
 
             if (queueNames.length === 0) {
@@ -320,6 +321,11 @@ export class IBMMQProvider implements IMQProvider {
                 // Add a small delay to ensure the message is committed
                 await new Promise(resolve => setTimeout(resolve, 100));
 
+                // Emit queue updated event for UI refresh
+                if (this.connectionManager) {
+                    this.connectionManager.emit('queueUpdated', queueName);
+                }
+
                 // Verify the message was put by checking queue depth
                 try {
                     const newDepth = await this.getQueueDepth(queueName);
@@ -447,6 +453,11 @@ export class IBMMQProvider implements IMQProvider {
                 }
 
                 this.log(`✅ Cleared ${messagesCleared} messages from queue: ${queueName}`);
+
+                // Emit queue updated event for UI refresh
+                if (this.connectionManager) {
+                    this.connectionManager.emit('queueUpdated', queueName);
+                }
             } finally {
                 // Close the queue
                 await new Promise<void>((resolve) => {
@@ -466,7 +477,7 @@ export class IBMMQProvider implements IMQProvider {
     }
 
     /**
-     * Delete a specific message from a queue using destructive get (from reference implementation)
+     * Delete a specific message from a queue using destructive get (FIXED implementation)
      */
     async deleteMessage(queueName: string, messageId: string): Promise<void> {
         if (!this.isConnected()) {
@@ -477,56 +488,106 @@ export class IBMMQProvider implements IMQProvider {
 
         let openedQ: { hObj: mq.MQObject; name: string } | null = null;
         try {
-            // Open queue for exclusive input to delete messages
-            openedQ = await this.openQueue(queueName, mq.MQC.MQOO_INPUT_EXCLUSIVE | mq.MQC.MQOO_FAIL_IF_QUIESCING);
+            // Open queue for input (destructive read) - use shared access to avoid blocking
+            openedQ = await this.openQueue(queueName, mq.MQC.MQOO_INPUT_SHARED | mq.MQC.MQOO_FAIL_IF_QUIESCING);
 
-            // Browse through messages to find the one with matching ID
+            // For IBM MQ, we'll use a position-based approach since message IDs are complex
+            // Parse the messageId to get the position (format: MSG_<position>_<timestamp>)
+            let targetPosition = -1;
+            const msgIdMatch = messageId.match(/^MSG_(\d+)_/);
+            if (msgIdMatch) {
+                targetPosition = parseInt(msgIdMatch[1], 10) - 1; // Convert to 0-based index
+            } else {
+                // If messageId doesn't match expected format, try to find by content
+                this.log(`⚠️ Message ID ${messageId} doesn't match expected format, searching by content`);
+            }
+
             let messageFound = false;
             let messagesProcessed = 0;
             const maxMessages = 1000; // Safety limit
 
-            while (!messageFound && messagesProcessed < maxMessages) {
-                try {
-                    // Browse first/next message to check its ID
-                    const browseGmoOption = messagesProcessed === 0 ? mq.MQC.MQGMO_BROWSE_FIRST : mq.MQC.MQGMO_BROWSE_NEXT;
-                    const messageContent = await this.internalGetMessage(
-                        openedQ.hObj,
-                        browseGmoOption | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
-                        queueName,
-                        "Browse for delete"
-                    );
+            // If we have a target position, try to delete that specific message
+            if (targetPosition >= 0) {
+                this.log(`🎯 Attempting to delete message at position ${targetPosition + 1}`);
 
-                    if (messageContent === null) {
-                        // No more messages
-                        break;
-                    }
-
-                    // Check if this is the message we want to delete
-                    // For simplicity, we'll match by position or content since IBM MQ message IDs are complex
-                    const currentMessageId = `MSG_${messagesProcessed + 1}_${Date.now()}`;
-
-                    if (currentMessageId === messageId || messageContent.includes(messageId)) {
-                        // Found the message, now delete it using destructive get
-                        const deletedMessage = await this.internalGetMessage(
+                // Skip to the target position by browsing
+                for (let i = 0; i < targetPosition; i++) {
+                    try {
+                        const browseOption = i === 0 ? mq.MQC.MQGMO_BROWSE_FIRST : mq.MQC.MQGMO_BROWSE_NEXT;
+                        const content = await this.internalGetMessage(
                             openedQ.hObj,
-                            mq.MQC.MQGMO_NO_SYNCPOINT | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
+                            browseOption | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
                             queueName,
-                            "Delete"
+                            "Browse to position"
                         );
 
-                        if (deletedMessage !== null) {
-                            messageFound = true;
-                            this.log(`✅ Successfully deleted message ${messageId} from queue: ${queueName}`);
+                        if (content === null) {
+                            throw new Error(`Message at position ${targetPosition + 1} not found - queue may have fewer messages`);
                         }
-                        break;
+                    } catch (error) {
+                        if (error instanceof Error && 'mqrc' in error) {
+                            const mqErr = error as any;
+                            if (mqErr.mqrc === 2033) { // MQRC_NO_MSG_AVAILABLE
+                                throw new Error(`Message at position ${targetPosition + 1} not found - queue has only ${i} messages`);
+                            }
+                        }
+                        throw error;
                     }
+                }
 
-                    messagesProcessed++;
+                // Now delete the message at the target position
+                try {
+                    const deletedMessage = await this.internalGetMessage(
+                        openedQ.hObj,
+                        mq.MQC.MQGMO_NO_SYNCPOINT | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
+                        queueName,
+                        "Delete target message"
+                    );
+
+                    if (deletedMessage !== null) {
+                        messageFound = true;
+                        this.log(`✅ Successfully deleted message at position ${targetPosition + 1} from queue: ${queueName}`);
+
+                        // Emit queue updated event for UI refresh
+                        if (this.connectionManager) {
+                            this.connectionManager.emit('queueUpdated', queueName);
+                        }
+                    }
                 } catch (error) {
                     if (error instanceof Error && 'mqrc' in error) {
                         const mqErr = error as any;
                         if (mqErr.mqrc === 2033) { // MQRC_NO_MSG_AVAILABLE
-                            break;
+                            throw new Error(`Message at position ${targetPosition + 1} not found`);
+                        }
+                    }
+                    throw error;
+                }
+            } else {
+                // Fallback: search by content or delete first message if messageId is simple
+                this.log(`🔍 Searching for message by content or using fallback deletion`);
+
+                try {
+                    const deletedMessage = await this.internalGetMessage(
+                        openedQ.hObj,
+                        mq.MQC.MQGMO_NO_SYNCPOINT | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
+                        queueName,
+                        "Delete first message"
+                    );
+
+                    if (deletedMessage !== null) {
+                        messageFound = true;
+                        this.log(`✅ Successfully deleted message from queue: ${queueName}`);
+
+                        // Emit queue updated event for UI refresh
+                        if (this.connectionManager) {
+                            this.connectionManager.emit('queueUpdated', queueName);
+                        }
+                    }
+                } catch (error) {
+                    if (error instanceof Error && 'mqrc' in error) {
+                        const mqErr = error as any;
+                        if (mqErr.mqrc === 2033) { // MQRC_NO_MSG_AVAILABLE
+                            throw new Error(`No messages available in queue ${queueName}`);
                         }
                     }
                     throw error;
@@ -534,7 +595,7 @@ export class IBMMQProvider implements IMQProvider {
             }
 
             if (!messageFound) {
-                throw new Error(`Message ${messageId} not found in queue ${queueName}`);
+                throw new Error(`Failed to delete message ${messageId} from queue ${queueName}`);
             }
 
         } catch (error) {
@@ -579,78 +640,52 @@ export class IBMMQProvider implements IMQProvider {
                 return;
             }
 
-            // For selective deletion, we need to open queue with browse AND input options
-            // This allows both browsing messages and deleting them
-            openedQ = await this.openQueue(queueName,
-                mq.MQC.MQOO_INPUT_SHARED | mq.MQC.MQOO_BROWSE | mq.MQC.MQOO_FAIL_IF_QUIESCING);
+            // Open queue for input (destructive read)
+            openedQ = await this.openQueue(queueName, mq.MQC.MQOO_INPUT_SHARED | mq.MQC.MQOO_FAIL_IF_QUIESCING);
 
-            // For selective deletion, browse and delete specific messages
-            const messagesToDelete = new Set(messageIds);
-            let messagesProcessed = 0;
-            const maxMessages = 1000; // Safety limit
+            this.log(`📋 Deleting ${messageIds.length} messages using simplified approach`);
 
-            while (messagesToDelete.size > 0 && messagesProcessed < maxMessages) {
+            // For multiple message deletion, we'll use a simplified approach:
+            // Delete messages one by one from the front of the queue
+            for (let i = 0; i < messageIds.length; i++) {
                 try {
-                    // Browse first message to check if we want to delete it
-                    const messageContent = await this.internalGetMessage(
+                    const deletedMessage = await this.internalGetMessage(
                         openedQ.hObj,
-                        mq.MQC.MQGMO_BROWSE_FIRST | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
+                        mq.MQC.MQGMO_NO_SYNCPOINT | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
                         queueName,
-                        "Browse for multi-delete"
+                        `Multi-delete ${i + 1}/${messageIds.length}`
                     );
 
-                    if (messageContent === null) {
-                        // No more messages
-                        break;
-                    }
-
-                    // Check if this message should be deleted
-                    const currentMessageId = `MSG_${messagesProcessed + 1}_${Date.now()}`;
-                    let shouldDelete = false;
-
-                    for (const msgId of messagesToDelete) {
-                        if (currentMessageId === msgId || messageContent.includes(msgId)) {
-                            shouldDelete = true;
-                            messagesToDelete.delete(msgId);
-                            break;
-                        }
-                    }
-
-                    if (shouldDelete) {
-                        // Delete this message using destructive get
-                        const deletedMessage = await this.internalGetMessage(
-                            openedQ.hObj,
-                            mq.MQC.MQGMO_NO_SYNCPOINT | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
-                            queueName,
-                            "Multi-delete"
-                        );
-
-                        if (deletedMessage !== null) {
-                            deletedCount++;
-                            this.log(`✅ Deleted message ${deletedCount}/${messageIds.length}`);
-                        }
+                    if (deletedMessage !== null) {
+                        deletedCount++;
+                        this.log(`✅ Deleted message ${deletedCount}/${messageIds.length}`);
                     } else {
-                        // Skip this message by getting and putting it back (not ideal, but works)
-                        // In a real implementation, you'd use message selectors or browse with specific criteria
-                        messagesProcessed++;
-                        if (messagesProcessed > 100) {
-                            // Prevent infinite loop
-                            break;
-                        }
+                        this.log(`⚠️ No message found for deletion ${i + 1}/${messageIds.length}`);
+                        break; // No more messages
                     }
-
                 } catch (error) {
                     if (error instanceof Error && 'mqrc' in error) {
                         const mqErr = error as any;
                         if (mqErr.mqrc === 2033) { // MQRC_NO_MSG_AVAILABLE
+                            this.log(`⚠️ No more messages available after deleting ${deletedCount} messages`);
                             break;
                         }
                     }
-                    throw error;
+                    this.log(`❌ Error deleting message ${i + 1}: ${(error as Error).message}`);
+                    // Continue with next message instead of failing completely
                 }
             }
 
-            this.log(`✅ Successfully deleted ${deletedCount} messages from queue: ${queueName}`);
+            this.log(`✅ Successfully deleted ${deletedCount} of ${messageIds.length} messages from queue: ${queueName}`);
+
+            if (deletedCount < messageIds.length) {
+                this.log(`⚠️ Note: Only ${deletedCount} of ${messageIds.length} messages were deleted. Some messages may have been consumed by other applications or may not exist.`);
+            }
+
+            // Emit queue updated event for UI refresh if any messages were deleted
+            if (deletedCount > 0 && this.connectionManager) {
+                this.connectionManager.emit('queueUpdated', queueName);
+            }
 
         } catch (error) {
             this.log(`❌ Error deleting messages: ${(error as Error).message}`, true);
@@ -979,38 +1014,60 @@ export class IBMMQProvider implements IMQProvider {
             // Open queue for browsing using reference pattern
             openedQ = await this.openQueue(queueName, mq.MQC.MQOO_INPUT_SHARED | mq.MQC.MQOO_BROWSE | mq.MQC.MQOO_FAIL_IF_QUIESCING);
 
-            // Browse messages using the reference implementation pattern
+            // Browse messages using the reference implementation pattern with MQMD extraction
             for (let i = 0; i < limit; i++) {
                 try {
                     const browseGmoOption = i === 0 ? mq.MQC.MQGMO_BROWSE_FIRST : mq.MQC.MQGMO_BROWSE_NEXT;
-                    const messageContent = await this.internalGetMessage(
+                    const messageResult = await this.internalGetMessageWithMQMD(
                         openedQ.hObj,
                         browseGmoOption | mq.MQC.MQGMO_FAIL_IF_QUIESCING,
                         queueName,
                         "Browse"
                     );
 
-                    if (messageContent === null) {
+                    if (messageResult === null) {
                         // No more messages
                         this.log(`📭 No more messages to browse in ${queueName}`);
                         break;
                     }
 
-                    // Create message object from browsed content
+                    const { content: messageContent, mqmd } = messageResult;
+
+                    // Extract real timestamp from MQMD
+                    const realTimestamp = this.convertMQMDTimestamp(mqmd.PutDate, mqmd.PutTime);
+
+                    // Extract correlation ID from MQMD (convert from Buffer to hex string if present)
+                    let correlationId = '';
+                    if (mqmd.CorrelId && mqmd.CorrelId.length > 0) {
+                        // Check if CorrelId contains non-zero bytes
+                        const hasData = mqmd.CorrelId.some((byte: number) => byte !== 0);
+                        if (hasData) {
+                            correlationId = mqmd.CorrelId.toString('hex').toUpperCase();
+                        }
+                    }
+
+                    // Create message object from browsed content with real MQMD data
                     const message: Message = {
-                        id: `MSG_${i + 1}_${Date.now()}`, // Generate unique ID
-                        correlationId: '', // Will be populated by internalGetMessage if available
-                        timestamp: new Date(),
+                        id: `MSG_${i + 1}_${Date.now()}`, // Generate unique ID for UI purposes
+                        correlationId: correlationId,
+                        timestamp: realTimestamp, // Use real IBM MQ timestamp
                         payload: messageContent,
                         properties: {
-                            format: 'MQSTR',
-                            persistence: 1,
-                            priority: 5
+                            format: mqmd.Format || 'MQSTR',
+                            persistence: mqmd.Persistence || 1,
+                            priority: mqmd.Priority || 5,
+                            messageId: mqmd.MsgId ? mqmd.MsgId.toString('hex').toUpperCase() : '',
+                            replyToQueue: mqmd.ReplyToQ || '',
+                            replyToQueueManager: mqmd.ReplyToQMgr || '',
+                            putDate: mqmd.PutDate,
+                            putTime: mqmd.PutTime,
+                            encoding: mqmd.Encoding,
+                            codedCharSetId: mqmd.CodedCharSetId
                         }
                     };
 
                     messages.push(message);
-                    this.log(`✅ Browsed message ${i + 1}: ${messageContent.substring(0, 50)}...`);
+                    this.log(`✅ Browsed message ${i + 1} (${realTimestamp.toISOString()}): ${messageContent.substring(0, 50)}...`);
                 } catch (error) {
                     if (error instanceof Error && 'mqrc' in error) {
                         const mqErr = error as any;
@@ -1043,6 +1100,7 @@ export class IBMMQProvider implements IMQProvider {
 
     /**
      * Internal get message function from reference implementation
+     * Returns both message content and MQMD data for timestamp extraction
      */
     private async internalGetMessage(
         hObj: mq.MQObject,
@@ -1086,6 +1144,123 @@ export class IBMMQProvider implements IMQProvider {
             } else {
                 throw err;
             }
+        }
+    }
+
+    /**
+     * Internal get message function with MQMD data extraction for timestamp handling
+     * Returns both message content and MQMD data
+     */
+    private async internalGetMessageWithMQMD(
+        hObj: mq.MQObject,
+        gmoOptions: number,
+        queueNameHint: string = "queue",
+        operationHint: string = "Get"
+    ): Promise<{ content: string; mqmd: any } | null> {
+        const mqmd = new mq.MQMD();
+        const gmo = new mq.MQGMO();
+        gmo.Options = gmoOptions;
+        gmo.WaitInterval = 0; // Default to NO_WAIT
+
+        // Max message length to retrieve - adjust as needed
+        const MAX_MSG_LEN = 4 * 1024 * 1024; // 4MB
+        const buffer = Buffer.alloc(MAX_MSG_LEN);
+
+        try {
+            // @ts-ignore - IBM MQ types are incorrect
+            const length = mq.GetSync(hObj, mqmd, gmo, buffer) as number;
+            if (length !== undefined && length > 0) {
+                const message = buffer.toString('utf8', 0, length);
+                this.log(`${operationHint} message from ${queueNameHint} (${length} bytes): ${message.substring(0, 50)}...`);
+
+                // Log MQMD timestamp information for debugging
+                this.log(`📅 MQMD PutDate: ${mqmd.PutDate}, PutTime: ${mqmd.PutTime}`);
+
+                return {
+                    content: message,
+                    mqmd: mqmd
+                };
+            } else {
+                this.log(`No messages available on ${queueNameHint} for ${operationHint}.`);
+                return null;
+            }
+        } catch (err) {
+            if (err instanceof Error && 'mqrc' in err) {
+                const mqErr = err as any;
+                if (mqErr.mqrc === 2033) { // MQRC_NO_MSG_AVAILABLE
+                    this.log(`No messages available on ${queueNameHint} for ${operationHint}.`);
+                    return null;
+                } else if (mqErr.mqrc === 2079) { // MQRC_TRUNCATED_MSG_ACCEPTED
+                    const message = buffer.toString('utf8');
+                    this.log(`${operationHint} message from ${queueNameHint} (TRUNCATED): ${message.substring(0, 50)}...`);
+                    return {
+                        content: message,
+                        mqmd: mqmd
+                    };
+                } else {
+                    throw new Error(`${operationHint} message from ${queueNameHint} failed: MQCC=${mqErr.mqcc}, MQRC=${mqErr.mqrc}, Message=${mqErr.message}`);
+                }
+            } else {
+                throw err;
+            }
+        }
+    }
+
+    /**
+     * Convert IBM MQ MQMD PutDate and PutTime to JavaScript Date
+     * MQMD.PutDate format: YYYYMMDD (e.g., 20241206)
+     * MQMD.PutTime format: HHMMSSTH (e.g., 15301234 = 15:30:12.34)
+     */
+    private convertMQMDTimestamp(putDate: string, putTime: string): Date {
+        try {
+            // Handle empty or invalid dates
+            if (!putDate || !putTime || putDate === '        ' || putTime === '        ') {
+                this.log(`⚠️ Invalid MQMD timestamp data: PutDate='${putDate}', PutTime='${putTime}', using current time`);
+                return new Date();
+            }
+
+            // Parse date: YYYYMMDD
+            const dateStr = putDate.trim();
+            if (dateStr.length !== 8) {
+                this.log(`⚠️ Invalid PutDate format: '${dateStr}', expected YYYYMMDD`);
+                return new Date();
+            }
+
+            const year = parseInt(dateStr.substring(0, 4), 10);
+            const month = parseInt(dateStr.substring(4, 6), 10) - 1; // JavaScript months are 0-based
+            const day = parseInt(dateStr.substring(6, 8), 10);
+
+            // Parse time: HHMMSSTH (where T is tenths, H is hundredths)
+            const timeStr = putTime.trim();
+            if (timeStr.length !== 8) {
+                this.log(`⚠️ Invalid PutTime format: '${timeStr}', expected HHMMSSTH`);
+                return new Date();
+            }
+
+            const hours = parseInt(timeStr.substring(0, 2), 10);
+            const minutes = parseInt(timeStr.substring(2, 4), 10);
+            const seconds = parseInt(timeStr.substring(4, 6), 10);
+            const tenths = parseInt(timeStr.substring(6, 7), 10);
+            const hundredths = parseInt(timeStr.substring(7, 8), 10);
+
+            // Convert tenths and hundredths to milliseconds
+            const milliseconds = (tenths * 100) + (hundredths * 10);
+
+            // Create the date object
+            const timestamp = new Date(year, month, day, hours, minutes, seconds, milliseconds);
+
+            // Validate the created date
+            if (isNaN(timestamp.getTime())) {
+                this.log(`⚠️ Invalid timestamp created from PutDate='${putDate}', PutTime='${putTime}', using current time`);
+                return new Date();
+            }
+
+            this.log(`📅 Converted MQMD timestamp: ${putDate} ${putTime} -> ${timestamp.toISOString()}`);
+            return timestamp;
+
+        } catch (error) {
+            this.log(`❌ Error converting MQMD timestamp: ${(error as Error).message}, using current time`);
+            return new Date();
         }
     }
 

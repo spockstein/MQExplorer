@@ -37,6 +37,15 @@ export class MessageBrowserWebview {
                 });
             }
         });
+
+        // Listen for queue updated events (after put/delete operations)
+        this.connectionManager.on('queueUpdated', (queueName: string) => {
+            // Only refresh if this is the queue we're currently viewing
+            if (this.queueName === queueName && this.panel) {
+                console.log(`Queue updated for ${queueName}, refreshing message list`);
+                this.refreshMessageList();
+            }
+        });
     }
 
     /**
@@ -199,6 +208,43 @@ export class MessageBrowserWebview {
         if (this.currentPage > 0) {
             this.currentPage--;
             await this.loadMessages();
+        }
+    }
+
+    /**
+     * Refresh the message list while maintaining current state
+     */
+    private async refreshMessageList(): Promise<void> {
+        try {
+            // Show refresh indicator in webview
+            if (this.panel) {
+                this.panel.webview.postMessage({
+                    command: 'showRefreshIndicator',
+                    message: 'Refreshing messages...'
+                });
+            }
+
+            // Reload messages while preserving current page and filters
+            await this.loadMessages();
+
+            // Hide refresh indicator
+            if (this.panel) {
+                this.panel.webview.postMessage({
+                    command: 'hideRefreshIndicator'
+                });
+            }
+
+            console.log(`Message list refreshed for queue: ${this.queueName}`);
+        } catch (error) {
+            console.error(`Error refreshing message list: ${(error as Error).message}`);
+
+            // Show error in webview
+            if (this.panel) {
+                this.panel.webview.postMessage({
+                    command: 'showError',
+                    message: `Error refreshing messages: ${(error as Error).message}`
+                });
+            }
         }
     }
 
@@ -797,8 +843,98 @@ export class MessageBrowserWebview {
                                 // Update the queue depth display
                                 document.querySelector('.depth-count').textContent = message.depth;
                                 break;
+                            case 'showRefreshIndicator':
+                                showRefreshIndicator(message.message);
+                                break;
+                            case 'hideRefreshIndicator':
+                                hideRefreshIndicator();
+                                break;
+                            case 'showError':
+                                showErrorMessage(message.message);
+                                break;
                         }
                     });
+
+                    // Function to show refresh indicator
+                    function showRefreshIndicator(message) {
+                        let indicator = document.getElementById('refreshIndicator');
+                        if (!indicator) {
+                            indicator = document.createElement('div');
+                            indicator.id = 'refreshIndicator';
+                            indicator.style.cssText = \`
+                                position: fixed;
+                                top: 10px;
+                                right: 10px;
+                                background: var(--vscode-notifications-background);
+                                color: var(--vscode-notifications-foreground);
+                                border: 1px solid var(--vscode-notifications-border);
+                                padding: 8px 12px;
+                                border-radius: 4px;
+                                z-index: 1000;
+                                font-size: 12px;
+                                display: flex;
+                                align-items: center;
+                                gap: 8px;
+                            \`;
+                            document.body.appendChild(indicator);
+                        }
+                        indicator.innerHTML = \`
+                            <div style="width: 12px; height: 12px; border: 2px solid var(--vscode-progressBar-background); border-top: 2px solid var(--vscode-progressBar-foreground); border-radius: 50%; animation: spin 1s linear infinite;"></div>
+                            \${message}
+                        \`;
+                        indicator.style.display = 'flex';
+                    }
+
+                    // Function to hide refresh indicator
+                    function hideRefreshIndicator() {
+                        const indicator = document.getElementById('refreshIndicator');
+                        if (indicator) {
+                            indicator.style.display = 'none';
+                        }
+                    }
+
+                    // Function to show error message
+                    function showErrorMessage(message) {
+                        hideRefreshIndicator();
+                        let errorDiv = document.getElementById('errorMessage');
+                        if (!errorDiv) {
+                            errorDiv = document.createElement('div');
+                            errorDiv.id = 'errorMessage';
+                            errorDiv.style.cssText = \`
+                                position: fixed;
+                                top: 10px;
+                                right: 10px;
+                                background: var(--vscode-inputValidation-errorBackground);
+                                color: var(--vscode-inputValidation-errorForeground);
+                                border: 1px solid var(--vscode-inputValidation-errorBorder);
+                                padding: 8px 12px;
+                                border-radius: 4px;
+                                z-index: 1000;
+                                font-size: 12px;
+                                max-width: 300px;
+                            \`;
+                            document.body.appendChild(errorDiv);
+                        }
+                        errorDiv.textContent = message;
+                        errorDiv.style.display = 'block';
+
+                        // Auto-hide after 5 seconds
+                        setTimeout(() => {
+                            if (errorDiv) {
+                                errorDiv.style.display = 'none';
+                            }
+                        }, 5000);
+                    }
+
+                    // Add CSS for spinner animation
+                    const style = document.createElement('style');
+                    style.textContent = \`
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    \`;
+                    document.head.appendChild(style);
 
                     // Update selected messages
                     function updateSelectedMessages() {
@@ -1120,8 +1256,11 @@ export class MessageBrowserWebview {
 
             vscode.window.showInformationMessage(`Message deleted from queue: ${this.queueName}`);
 
-            // Refresh the message list
-            await this.loadMessages();
+            // Emit queue updated event to trigger UI refresh
+            this.connectionManager.emit('queueUpdated', this.queueName);
+
+            // Refresh the message list immediately
+            await this.refreshMessageList();
         } catch (error) {
             vscode.window.showErrorMessage(`Error deleting message: ${(error as Error).message}`);
         }
@@ -1162,8 +1301,11 @@ export class MessageBrowserWebview {
 
             vscode.window.showInformationMessage(`${messageIds.length} messages deleted from queue: ${this.queueName}`);
 
-            // Refresh the message list
-            await this.loadMessages();
+            // Emit queue updated event to trigger UI refresh
+            this.connectionManager.emit('queueUpdated', this.queueName);
+
+            // Refresh the message list immediately
+            await this.refreshMessageList();
         } catch (error) {
             vscode.window.showErrorMessage(`Error deleting messages: ${(error as Error).message}`);
         }
