@@ -1,26 +1,5 @@
-<?xml version="1.0" encoding="UTF-8"?>
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- MQ Explorer Activity Bar Icon - Based on the black square with MQ design -->
-  <!-- Follows VS Code guidelines: 24x24, single color, centered -->
-
-  <g fill="currentColor">
-    <!-- Black square background -->
-    <rect x="2" y="2" width="20" height="20" rx="1" fill="currentColor"/>
-
-    <!-- White curved top element -->
-    <path d="M2 6 Q12 3 22 6 L22 2 L2 2 Z" fill="white"/>
-
-    <!-- White curved bottom element -->
-    <path d="M2 18 Q12 21 22 18 L22 22 L2 22 Z" fill="white"/>
-
-    <!-- MQ Text -->
-    <g fill="white" font-family="Arial, sans-serif" font-weight="bold">
-      <!-- Letter M -->
-      <path d="M4.5 8.5 L4.5 15.5 L5.8 15.5 L5.8 11.2 L7.2 13.8 L8.8 13.8 L10.2 11.2 L10.2 15.5 L11.5 15.5 L11.5 8.5 L9.5 8.5 L8 11.8 L6.5 8.5 Z"/>
-
-      <!-- Letter Q -->
-      <circle cx="16.5" cy="12" r="3" stroke="white" stroke-width="1.2" fill="none"/>
-      <path d="M18.2 14.2 L19.5 15.5" stroke="white" stroke-width="1.2" stroke-linecap="round"/>
-    </g>
-  </g>
+<path d="M4 7 L4 17 L6 17 L6 13 L7.5 16 L8.5 16 L10 13 L10 17 L12 17 L12 7 L9.5 7 L8 11 L6.5 7 L4 7 Z" fill="#424242"/>
+<path d="M14 7 C16.761 7 19 9.239 19 12 C19 14.761 16.761 17 14 17 C11.239 17 9 14.761 9 12 C9 9.239 11.239 7 14 7 Z M14 9 C12.343 9 11 10.343 11 12 C11 13.657 12.343 15 14 15 C15.657 15 17 13.657 17 12 C17 10.343 15.657 9 14 9 Z" fill="#424242"/>
+<path d="M15.5 13.5 L17.5 15.5" stroke="#424242" stroke-width="1.5" stroke-linecap="round"/>
 </svg>
