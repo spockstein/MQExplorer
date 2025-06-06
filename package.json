@@ -2,7 +2,7 @@
   "name": "mqexplorer",
   "displayName": "MQ Explorer",
   "description": "A VS Code extension for browsing and managing message queues across multiple providers",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "publisher": "praxai",
   "icon": "resources/icon.png",
   "repository": {
@@ -227,7 +227,7 @@
         {
           "id": "mqexplorer-container",
           "title": "MQ Explorer",
-          "icon": "resources/icon.png"
+          "icon": "resources/icon.svg"
         }
       ]
     },
