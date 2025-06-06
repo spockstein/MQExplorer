@@ -224,6 +224,39 @@ export class ConnectionProfileWebview {
                     width: auto;
                     margin-right: 10px;
                 }
+                .known-queues-section {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 8px;
+                }
+                .known-queues-section textarea {
+                    min-height: 80px;
+                    resize: vertical;
+                    font-family: 'Courier New', monospace;
+                    font-size: 12px;
+                }
+                .known-queues-controls {
+                    display: flex;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                }
+                .secondary-button {
+                    background: var(--vscode-button-secondaryBackground);
+                    color: var(--vscode-button-secondaryForeground);
+                    border: 1px solid var(--vscode-button-border);
+                    padding: 6px 12px;
+                    border-radius: 2px;
+                    cursor: pointer;
+                    font-size: 12px;
+                }
+                .secondary-button:hover {
+                    background: var(--vscode-button-secondaryHoverBackground);
+                }
+                .help-text {
+                    color: var(--vscode-descriptionForeground);
+                    font-size: 11px;
+                    line-height: 1.4;
+                }
                 .actions {
                     margin-top: 20px;
                     display: flex;
@@ -294,6 +327,20 @@ export class ConnectionProfileWebview {
                 <div class="form-group checkbox-group">
                     <input type="checkbox" id="ibmmq_useTLS" ${ibmmqParams && ibmmqParams.useTLS ? 'checked' : ''}>
                     <label for="ibmmq_useTLS">Use TLS</label>
+                </div>
+
+                <div class="form-group">
+                    <label for="knownQueues">Known Queues (Optional)</label>
+                    <div class="known-queues-section">
+                        <textarea id="knownQueues" rows="4" placeholder="Enter queue names separated by commas or new lines&#10;Example: DEV.QUEUE.1, DEV.QUEUE.2, PROD.QUEUE.1">${ibmmqParams && ibmmqParams.knownQueues ? ibmmqParams.knownQueues.join(', ') : ''}</textarea>
+                        <div class="help-text">
+                            <small>💡 Specify queue names you have access to. These will be used as fallback when dynamic discovery fails due to authorization issues.</small>
+                        </div>
+                        <div class="known-queues-controls">
+                            <button type="button" id="validateKnownQueues" class="secondary-button">Validate Queue Names</button>
+                            <button type="button" id="clearKnownQueues" class="secondary-button">Clear All</button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -687,6 +734,7 @@ export class ConnectionProfileWebview {
                             const username = document.getElementById('ibmmq_username').value;
                             const password = document.getElementById('ibmmq_password').value;
                             const useTLS = document.getElementById('ibmmq_useTLS').checked;
+                            const knownQueuesText = document.getElementById('knownQueues').value.trim();
 
                             if (!queueManager || !host || !channel) {
                                 vscode.postMessage({
@@ -696,6 +744,9 @@ export class ConnectionProfileWebview {
                                 return;
                             }
 
+                            // Parse known queues
+                            const knownQueues = knownQueuesText ? parseKnownQueues(knownQueuesText) : [];
+
                             newProfile.connectionParams = {
                                 queueManager,
                                 host,
@@ -703,7 +754,8 @@ export class ConnectionProfileWebview {
                                 channel,
                                 username: username || undefined,
                                 password: password || undefined,
-                                useTLS
+                                useTLS,
+                                knownQueues: knownQueues.length > 0 ? knownQueues : undefined
                             };
                         } else if (providerType === 'rabbitmq') {
                             const host = document.getElementById('rabbitmq_host').value;
@@ -1001,6 +1053,10 @@ export class ConnectionProfileWebview {
                             const username = document.getElementById('ibmmq_username').value;
                             const password = document.getElementById('ibmmq_password').value;
                             const useTLS = document.getElementById('ibmmq_useTLS').checked;
+                            const knownQueuesText = document.getElementById('knownQueues').value.trim();
+
+                            // Parse known queues
+                            const knownQueues = knownQueuesText ? parseKnownQueues(knownQueuesText) : [];
 
                             testProfile.connectionParams = {
                                 queueManager,
@@ -1009,7 +1065,8 @@ export class ConnectionProfileWebview {
                                 channel,
                                 username: username || undefined,
                                 password: password || undefined,
-                                useTLS
+                                useTLS,
+                                knownQueues: knownQueues.length > 0 ? knownQueues : undefined
                             };
                         } else if (providerType === 'rabbitmq') {
                             const host = document.getElementById('rabbitmq_host').value;
@@ -1320,6 +1377,74 @@ export class ConnectionProfileWebview {
                         document.getElementById('aws_profile_params').style.display = useProfileCredentials ? 'block' : 'none';
                         document.getElementById('aws_credentials_params').style.display = useProfileCredentials ? 'none' : 'block';
                     });
+
+                    // Handle Known Queues validation button
+                    document.getElementById('validateKnownQueues').addEventListener('click', () => {
+                        const knownQueuesText = document.getElementById('knownQueues').value.trim();
+                        if (!knownQueuesText) {
+                            vscode.postMessage({
+                                command: 'info',
+                                message: 'No queue names to validate'
+                            });
+                            return;
+                        }
+
+                        const queueNames = parseKnownQueues(knownQueuesText);
+                        const validationResults = validateQueueNames(queueNames);
+
+                        if (validationResults.valid.length === 0) {
+                            vscode.postMessage({
+                                command: 'error',
+                                message: 'No valid queue names found. Please check the format.'
+                            });
+                        } else {
+                            const message = validationResults.invalid.length > 0
+                                ? \`Valid: \${validationResults.valid.length}, Invalid: \${validationResults.invalid.length}. Invalid names: \${validationResults.invalid.join(', ')}\`
+                                : \`All \${validationResults.valid.length} queue names are valid\`;
+
+                            vscode.postMessage({
+                                command: 'info',
+                                message: message
+                            });
+                        }
+                    });
+
+                    // Handle Known Queues clear button
+                    document.getElementById('clearKnownQueues').addEventListener('click', () => {
+                        document.getElementById('knownQueues').value = '';
+                    });
+
+                    // Helper function to parse known queues from text
+                    function parseKnownQueues(text) {
+                        return text
+                            .split(/[,\\n\\r]+/)
+                            .map(name => name.trim())
+                            .filter(name => name.length > 0);
+                    }
+
+                    // Helper function to validate queue names
+                    function validateQueueNames(queueNames) {
+                        const valid = [];
+                        const invalid = [];
+
+                        queueNames.forEach(name => {
+                            // IBM MQ queue name validation rules:
+                            // - Max 48 characters
+                            // - Can contain A-Z, 0-9, period (.), underscore (_), forward slash (/), percent (%)
+                            // - Cannot start with SYSTEM. (reserved)
+                            if (name.length > 48) {
+                                invalid.push(name + ' (too long)');
+                            } else if (!/^[A-Z0-9._/%]+$/i.test(name)) {
+                                invalid.push(name + ' (invalid characters)');
+                            } else if (name.toUpperCase().startsWith('SYSTEM.')) {
+                                invalid.push(name + ' (reserved name)');
+                            } else {
+                                valid.push(name);
+                            }
+                        });
+
+                        return { valid, invalid };
+                    }
                 })();
             </script>
         </body>

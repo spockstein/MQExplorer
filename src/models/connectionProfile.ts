@@ -26,6 +26,7 @@ export interface IBMMQConnectionProfile extends ConnectionProfile {
             keystorePassword?: string; // stored in SecretStorage
             truststore?: string;
         };
+        knownQueues?: string[]; // Cache of queue names for fallback when dynamic discovery fails
     };
 }
 

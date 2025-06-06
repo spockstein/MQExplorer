@@ -72,4 +72,8 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
   ## [0.0.9] - 2025-06-04
   ### Added
   - Bug fixes and icon update
-  
+
+### [0.1.3] - 2025-06-06
+### Added
+- Bug fixes and performance improvements
+- known queues support for IBM MQ connection profile with validation and UI enhancements

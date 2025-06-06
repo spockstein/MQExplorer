@@ -113,16 +113,41 @@ export class IBMMQProvider implements IMQProvider {
         }
 
         try {
-            this.log('🔍 Listing queues using dynamic PCF discovery');
+            this.log('🔍 Listing queues using hybrid approach: dynamic discovery with known queues fallback');
 
-            // Use pure dynamic queue discovery - NO fallbacks
-            const queueNames = await this.discoverQueuesUsingRealPCF(filter || '*');
-            this.log(`📋 Dynamic discovery found ${queueNames.length} queues`);
+            // First attempt: Dynamic discovery
+            let queueNames: string[] = [];
+            let discoveryMethod = 'dynamic';
+
+            try {
+                queueNames = await this.discoverQueuesUsingRealPCF(filter || '*');
+                this.log(`📋 Dynamic discovery found ${queueNames.length} queues`);
+            } catch (discoveryError) {
+                const mqError = discoveryError as any;
+                if (mqError.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
+                    this.log(`⚠️ Dynamic discovery failed due to authorization (MQRC: 2035), falling back to known queues`);
+                    queueNames = this.getKnownQueuesFromProfile(filter);
+                    discoveryMethod = 'cached';
+                } else {
+                    this.log(`⚠️ Dynamic discovery failed: ${(discoveryError as Error).message}, falling back to known queues`);
+                    queueNames = this.getKnownQueuesFromProfile(filter);
+                    discoveryMethod = 'cached';
+                }
+            }
+
+            // If dynamic discovery returned no results, try known queues as fallback
+            if (queueNames.length === 0) {
+                this.log(`⚠️ Dynamic discovery returned no queues, trying known queues fallback`);
+                queueNames = this.getKnownQueuesFromProfile(filter);
+                discoveryMethod = 'cached';
+            }
 
             if (queueNames.length === 0) {
-                this.log(`⚠️ No queues discovered - requires proper PCF MQCMD_INQUIRE_Q implementation`);
+                this.log(`⚠️ No queues available from either dynamic discovery or known queues cache`);
                 return [];
             }
+
+            this.log(`📋 Using ${discoveryMethod} discovery method with ${queueNames.length} queues`);
 
             const discoveredQueues: QueueInfo[] = [];
 
@@ -134,15 +159,27 @@ export class IBMMQProvider implements IMQProvider {
                             name: queueName,
                             depth: depth,
                             type: 'Local',
-                            description: `Queue ${queueName}`
+                            description: discoveryMethod === 'cached'
+                                ? `Queue ${queueName} (from known queues)`
+                                : `Queue ${queueName}`
                         };
                         discoveredQueues.push(queueInfo);
-                        this.log(`✅ Discovered queue: ${queueName} (depth: ${depth})`);
+                        this.log(`✅ Accessible queue: ${queueName} (depth: ${depth}) [${discoveryMethod}]`);
                     }
                 } catch (error) {
                     const mqError = error as any;
                     if (mqError.mqrc === mq.MQC.MQRC_UNKNOWN_OBJECT_NAME) {
                         this.log(`⚠️ Queue ${queueName} does not exist (MQRC: 2085)`);
+                    } else if (mqError.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
+                        this.log(`⚠️ Not authorized to access queue ${queueName} (MQRC: 2035)`);
+                        // Still add to list but with depth 0 and note about authorization
+                        const queueInfo: QueueInfo = {
+                            name: queueName,
+                            depth: 0,
+                            type: 'Local',
+                            description: `Queue ${queueName} (access restricted)`
+                        };
+                        discoveredQueues.push(queueInfo);
                     } else {
                         this.log(`❌ Error accessing queue ${queueName}: ${(error as Error).message}`);
                     }
@@ -155,7 +192,7 @@ export class IBMMQProvider implements IMQProvider {
 
             filteredQueues.sort((a, b) => a.name.localeCompare(b.name));
 
-            this.log(`📋 Found ${filteredQueues.length} accessible queues`);
+            this.log(`📋 Found ${filteredQueues.length} accessible queues (method: ${discoveryMethod})`);
             return filteredQueues;
         } catch (error) {
             this.log(`❌ Error listing queues: ${(error as Error).message}`, true);
@@ -1078,6 +1115,30 @@ export class IBMMQProvider implements IMQProvider {
     }
 
 
+
+    /**
+     * Get known queues from connection profile as fallback
+     */
+    private getKnownQueuesFromProfile(filter?: string): string[] {
+        if (!this.connectionParams || !this.connectionParams.knownQueues) {
+            this.log(`📋 No known queues configured in connection profile`);
+            return [];
+        }
+
+        const knownQueues = this.connectionParams.knownQueues;
+        this.log(`📋 Found ${knownQueues.length} known queues in profile: [${knownQueues.join(', ')}]`);
+
+        // Apply filter if provided
+        if (filter && filter !== '*') {
+            const filteredQueues = knownQueues.filter(queueName =>
+                queueName.toLowerCase().includes(filter.toLowerCase())
+            );
+            this.log(`📋 Filtered to ${filteredQueues.length} queues matching filter '${filter}': [${filteredQueues.join(', ')}]`);
+            return filteredQueues;
+        }
+
+        return knownQueues;
+    }
 
     /**
      * Pure dynamic queue discovery - NO hardcoded fallbacks
