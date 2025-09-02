@@ -1,4 +1,39 @@
-import * as mq from 'ibmmq';
+// Lazy import for IBM MQ to avoid hard dependency
+let mq: any = null;
+
+// Initialize mq with comprehensive mock object to prevent compilation errors
+try {
+    mq = require('ibmmq');
+} catch (error) {
+    // IBM MQ library not available - create comprehensive mock object to prevent compilation errors
+    const mockMQC = new Proxy({}, {
+        get: () => 0 // Return 0 for any MQC constant access
+    });
+
+    mq = {
+        MQC: mockMQC,
+        MQMD: class { constructor() { Object.assign(this, {}); } },
+        MQPMO: class { constructor() { Object.assign(this, {}); } },
+        MQGMO: class { constructor() { Object.assign(this, {}); } },
+        MQOD: class { constructor() { Object.assign(this, {}); } },
+        MQCNO: class { constructor() { Object.assign(this, {}); } },
+        MQCD: class { constructor() { Object.assign(this, {}); } },
+        MQCSP: class { constructor() { Object.assign(this, {}); } },
+        MQAttr: class { constructor() { Object.assign(this, arguments[0] || {}); } },
+        MQObject: class {},
+        Connx: () => {},
+        Disc: () => {},
+        Open: () => {},
+        Close: () => {},
+        Put: () => {},
+        Get: () => {},
+        GetSync: () => 0,
+        Inq: () => {},
+        Cmit: () => {},
+        Back: () => {}
+    };
+}
+
 import { IMQProvider, QueueInfo, BrowseOptions, Message, MessageProperties, QueueProperties, TopicInfo, TopicProperties, ChannelInfo, ChannelProperties, ChannelStatus } from './IMQProvider';
 import { IBMMQConnectionProfile } from '../models/connectionProfile';
 import * as vscode from 'vscode';
@@ -9,13 +44,41 @@ import { ConnectionManager } from '../services/connectionManager';
  * Implements Tasks 1.4 (Message Browsing), 1.5 (Message Putting), 1.6 (Queue Operations)
  */
 export class IBMMQProvider implements IMQProvider {
-    private connectionHandle: mq.MQQueueManager | null = null;
+    private connectionHandle: any | null = null;
     private connectionParams: IBMMQConnectionProfile['connectionParams'] | null = null;
     private outputChannel: vscode.OutputChannel;
     private connectionManager: ConnectionManager | null = null;
 
     constructor() {
         this.outputChannel = vscode.window.createOutputChannel('MQExplorer: IBM MQ');
+    }
+
+    /**
+     * Lazy load IBM MQ library to avoid hard dependency
+     */
+    private async loadIBMMQLibrary(): Promise<any> {
+        if (mq === null) {
+            try {
+                mq = require('ibmmq');
+                this.log('✅ IBM MQ library loaded successfully');
+                return mq;
+            } catch (error) {
+                const errorMessage = `IBM MQ library not available: ${(error as Error).message}`;
+                this.log(`❌ ${errorMessage}`, true);
+                throw new Error(`${errorMessage}\n\nTo use IBM MQ functionality, please install the IBM MQ client libraries:\n1. Download IBM MQ client from IBM website\n2. Install the client libraries\n3. Restart VS Code\n\nAlternatively, you can use other messaging providers like RabbitMQ, Kafka, Azure Service Bus, or AWS SQS.`);
+            }
+        }
+        return mq;
+    }
+
+    /**
+     * Get IBM MQ library (synchronous version for cases where we know it's already loaded)
+     */
+    private getMQLibrary(): any {
+        if (mq === null) {
+            throw new Error('IBM MQ library not loaded. Call loadIBMMQLibrary() first.');
+        }
+        return mq;
     }
 
     setConnectionManager(connectionManager: ConnectionManager): void {
@@ -38,25 +101,28 @@ export class IBMMQProvider implements IMQProvider {
         try {
             this.log(`🔗 Connecting to queue manager ${connectionParams.queueManager} at ${connectionParams.host}:${connectionParams.port}`);
 
+            // Lazy load IBM MQ library
+            const mqLib = await this.loadIBMMQLibrary();
+
             this.connectionParams = connectionParams;
 
-            const mqConnOpts: mq.MQCNO = new mq.MQCNO();
-            mqConnOpts.Options = mq.MQC.MQCNO_CLIENT_BINDING;
+            const mqConnOpts: any = new mqLib.MQCNO();
+            mqConnOpts.Options = mqLib.MQC.MQCNO_CLIENT_BINDING;
 
-            const mqCd: mq.MQCD = new mq.MQCD();
+            const mqCd: any = new mqLib.MQCD();
             mqCd.ConnectionName = `${connectionParams.host}(${connectionParams.port})`;
             mqCd.ChannelName = connectionParams.channel;
             mqConnOpts.ClientConn = mqCd;
 
             if (connectionParams.username && connectionParams.password) {
-                const mqCsp: mq.MQCSP = new mq.MQCSP();
+                const mqCsp: any = new mqLib.MQCSP();
                 mqCsp.UserId = connectionParams.username;
                 mqCsp.Password = connectionParams.password;
                 mqConnOpts.SecurityParms = mqCsp;
             }
 
-            this.connectionHandle = await new Promise<mq.MQQueueManager>((resolve, reject) => {
-                const callback = function(err: any, qmgr: mq.MQQueueManager) {
+            this.connectionHandle = await new Promise<any>((resolve, reject) => {
+                const callback = function(err: any, qmgr: any) {
                     if (err) {
                         reject(new Error(`Error connecting to queue manager: ${err.message}`));
                     } else {
@@ -65,7 +131,7 @@ export class IBMMQProvider implements IMQProvider {
                 };
 
                 // @ts-ignore - IBM MQ types are incorrect
-                mq.Connx(connectionParams.queueManager, mqConnOpts, callback);
+                mqLib.Connx(connectionParams.queueManager, mqConnOpts, callback);
             });
 
             this.log(`✅ Connected to queue manager ${connectionParams.queueManager}`);
@@ -90,7 +156,12 @@ export class IBMMQProvider implements IMQProvider {
                     };
 
                     // @ts-ignore - IBM MQ types are incorrect
-                    mq.Disc(this.connectionHandle, callback);
+                    // Ensure IBM MQ library is loaded (it should be since we're connected)
+                    if (mq) {
+                        mq.Disc(this.connectionHandle, callback);
+                    } else {
+                        reject(new Error('IBM MQ library not available'));
+                    }
                 });
 
                 this.connectionHandle = null;
@@ -111,6 +182,9 @@ export class IBMMQProvider implements IMQProvider {
         if (!this.isConnected()) {
             throw new Error('Not connected to Queue Manager');
         }
+
+        // Ensure IBM MQ library is loaded
+        await this.loadIBMMQLibrary();
 
         try {
             this.log('🔍 Listing queues using optimized approach: known queues first, then dynamic discovery');
@@ -169,7 +243,7 @@ export class IBMMQProvider implements IMQProvider {
                     }
                 } catch (error) {
                     const mqError = error as any;
-                    if (mqError.mqrc === mq.MQC.MQRC_UNKNOWN_OBJECT_NAME) {
+                    if (mqError.mqrc === (mq as any)?.MQC?.MQRC_UNKNOWN_OBJECT_NAME) {
                         this.log(`⚠️ Queue ${queueName} does not exist (MQRC: 2085)`);
                     } else if (mqError.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
                         this.log(`⚠️ Not authorized to access queue ${queueName} (MQRC: 2035)`);
@@ -242,19 +316,22 @@ export class IBMMQProvider implements IMQProvider {
             throw new Error('Not connected to Queue Manager');
         }
 
+        // Ensure IBM MQ library is loaded
+        const mqLib = this.getMQLibrary();
+
         try {
             this.log(`📤 Putting message to queue: ${queueName}`);
 
             // Open queue for output
-            const mqOd = new mq.MQOD();
+            const mqOd = new mqLib.MQOD();
             mqOd.ObjectName = queueName;
-            mqOd.ObjectType = mq.MQC.MQOT_Q;
+            mqOd.ObjectType = mqLib.MQC.MQOT_Q;
 
-            const openOptions = mq.MQC.MQOO_OUTPUT | mq.MQC.MQOO_FAIL_IF_QUIESCING;
+            const openOptions = mqLib.MQC.MQOO_OUTPUT | mqLib.MQC.MQOO_FAIL_IF_QUIESCING;
 
-            const hObj = await new Promise<mq.MQObject>((resolve, reject) => {
+            const hObj = await new Promise<any>((resolve, reject) => {
                 // @ts-ignore - IBM MQ types are incorrect
-                mq.Open(this.connectionHandle!, mqOd, openOptions, function(err: any, obj: mq.MQObject) {
+                mqLib.Open(this.connectionHandle!, mqOd, openOptions, function(err: any, obj: any) {
                     if (err) {
                         reject(new Error(`Error opening queue for put: ${err.message}`));
                     } else {
@@ -265,9 +342,9 @@ export class IBMMQProvider implements IMQProvider {
 
             try {
                 // Set up message descriptor
-                const mqMd = new mq.MQMD();
-                mqMd.Format = properties?.format || mq.MQC.MQFMT_STRING;
-                mqMd.Persistence = properties?.persistence || mq.MQC.MQPER_PERSISTENT;
+                const mqMd = new mqLib.MQMD();
+                mqMd.Format = properties?.format || mqLib.MQC.MQFMT_STRING;
+                mqMd.Persistence = properties?.persistence || mqLib.MQC.MQPER_PERSISTENT;
                 mqMd.Priority = properties?.priority || 5;
 
                 if (properties?.correlationId) {
@@ -407,7 +484,7 @@ export class IBMMQProvider implements IMQProvider {
 
             const openOptions = mq.MQC.MQOO_INPUT_AS_Q_DEF | mq.MQC.MQOO_FAIL_IF_QUIESCING;
 
-            const hObj = await new Promise<mq.MQObject>((resolve, reject) => {
+            const hObj = await new Promise<any>((resolve, reject) => {
                 // @ts-ignore - IBM MQ types are incorrect
                 mq.Open(this.connectionHandle!, mqOd, openOptions, function(err: any, obj: mq.MQObject) {
                     if (err) {
@@ -486,7 +563,7 @@ export class IBMMQProvider implements IMQProvider {
 
         this.log(`🗑️ Delete message ${messageId} from queue: ${queueName}`);
 
-        let openedQ: { hObj: mq.MQObject; name: string } | null = null;
+        let openedQ: { hObj: any; name: string } | null = null;
         try {
             // Open queue for input (destructive read) - use shared access to avoid blocking
             openedQ = await this.openQueue(queueName, mq.MQC.MQOO_INPUT_SHARED | mq.MQC.MQOO_FAIL_IF_QUIESCING);

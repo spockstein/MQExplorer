@@ -78,6 +78,7 @@ const config = {
     'brace-expansion': 'commonjs brace-expansion',
     'balanced-match': 'commonjs balanced-match',
     '@isaacs/fs-minipass': 'commonjs @isaacs/fs-minipass',
+    'ibmmq': 'commonjs ibmmq', // Make IBM MQ optional
     'chownr': 'commonjs chownr',
     'minizlib': 'commonjs minizlib',
     'mkdirp': 'commonjs mkdirp',

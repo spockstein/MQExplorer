@@ -1480,8 +1480,8 @@ export class ConnectionProfileWebview {
 
             switch (profile.providerType) {
                 case 'ibmmq':
-                    const { IBMMQProvider } = require('../providers/IBMMQProvider');
-                    provider = new IBMMQProvider();
+                    const { IBMMQProviderWrapper } = require('../providers/IBMMQProviderWrapper');
+                    provider = new IBMMQProviderWrapper();
                     break;
 
                 case 'rabbitmq':

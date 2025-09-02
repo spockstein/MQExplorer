@@ -284,8 +284,8 @@ export class ConnectionManager {
 
             switch (profile.providerType) {
                 case 'ibmmq':
-                    const { IBMMQProvider } = require('../providers/IBMMQProvider');
-                    provider = new IBMMQProvider();
+                    const { IBMMQProviderWrapper } = require('../providers/IBMMQProviderWrapper');
+                    provider = new IBMMQProviderWrapper();
 
                     // Set connection manager reference for event emission
                     if ('setConnectionManager' in provider) {

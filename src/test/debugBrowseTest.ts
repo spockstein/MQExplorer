@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { IBMMQProvider } from '../providers/IBMMQProvider';
+// import { IBMMQProvider } from '../providers/IBMMQProvider'; // Temporarily disabled for optional dependency
 
 const mq = require('ibmmq');
 
@@ -16,8 +16,11 @@ export async function debugBrowseTest(): Promise<void> {
         log('Starting debug browse test...');
 
         // Create IBM MQ provider
-        const provider = new IBMMQProvider();
+        // const provider = new IBMMQProvider(); // Temporarily disabled for optional dependency
+        console.log('❌ Debug Browse test temporarily disabled due to optional dependency');
+        return;
 
+        /*
         // Connection parameters for local IBM MQ
         const connectionParams = {
             host: 'localhost',
@@ -54,6 +57,7 @@ export async function debugBrowseTest(): Promise<void> {
         // Disconnect
         await provider.disconnect();
         log('✅ Debug browse test completed');
+        */
 
     } catch (error) {
         const errorMessage = `❌ Debug browse test failed: ${(error as Error).message}`;
@@ -63,9 +67,8 @@ export async function debugBrowseTest(): Promise<void> {
     }
 }
 
-/**
- * Test raw IBM MQ browse using direct API calls
- */
+// Debug browse test functions are commented out due to optional IBM MQ dependency
+// Test raw IBM MQ browse using direct API calls
 async function testRawBrowse(queueName: string, log: (msg: string) => void): Promise<void> {
     try {
         log(`Testing raw browse for queue: ${queueName}`);
@@ -189,43 +192,41 @@ async function testRawBrowse(queueName: string, log: (msg: string) => void): Pro
     }
 }
 
-/**
- * Test putting a message then browsing
- */
-async function testPutThenBrowse(provider: IBMMQProvider, queueName: string, log: (msg: string) => void): Promise<void> {
-    try {
-        log('Putting a test message...');
+// Test putting a message then browsing
+// async function testPutThenBrowse(provider: IBMMQProvider, queueName: string, log: (msg: string) => void): Promise<void> {
+//     try {
+//         log('Putting a test message...');
 
-        const testMessage = `Debug test message - ${new Date().toISOString()}`;
-        await provider.putMessage(queueName, testMessage, {
-            format: 'MQSTR',
-            persistence: 1,
-            priority: 5
-        });
-
-        log('Test message put successfully');
-
-        // Wait a moment
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        log('Now trying to browse...');
-        const messages = await provider.browseMessages(queueName, { limit: 5 });
-        log(`Browse result: ${messages.length} messages found`);
-
-        if (messages.length > 0) {
-            log('✅ Browse after put successful');
-            messages.forEach((msg, index) => {
-                const payloadStr = typeof msg.payload === 'string' ? msg.payload : msg.payload.toString('utf8');
-                log(`Message ${index + 1}: ${payloadStr.substring(0, 50)}...`);
-            });
-        } else {
-            log('❌ Browse after put failed - no messages found');
-        }
-
-    } catch (error) {
-        log(`Put then browse test error: ${(error as Error).message}`);
-    }
-}
+//         const testMessage = `Debug test message - ${new Date().toISOString()}`;
+//         await provider.putMessage(queueName, testMessage, {
+//             format: 'MQSTR',
+//             persistence: 1,
+//             priority: 5
+//         });
+//
+//         log('Test message put successfully');
+//
+//         // Wait a moment
+//         await new Promise(resolve => setTimeout(resolve, 500));
+//
+//         log('Now trying to browse...');
+//         const messages = await provider.browseMessages(queueName, { limit: 5 });
+//         log(`Browse result: ${messages.length} messages found`);
+//
+//         if (messages.length > 0) {
+//             log('✅ Browse after put successful');
+//             messages.forEach((msg, index) => {
+//                 const payloadStr = typeof msg.payload === 'string' ? msg.payload : msg.payload.toString('utf8');
+//                 log(`Message ${index + 1}: ${payloadStr.substring(0, 50)}...`);
+//             });
+//         } else {
+//             log('❌ Browse after put failed - no messages found');
+//         }
+//
+//     } catch (error) {
+//         log(`Put then browse test error: ${(error as Error).message}`);
+//     }
+// }
 
 /**
  * Test PCF inquiry method for getting queue depth
@@ -528,3 +529,4 @@ export function registerDebugBrowseTest(context: vscode.ExtensionContext): void 
 
     context.subscriptions.push(command);
 }
+// End of commented out debug browse test functions

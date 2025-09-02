@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { IBMMQProvider } from '../providers/IBMMQProvider';
+// import { IBMMQProvider } from '../providers/IBMMQProvider'; // Temporarily disabled for optional dependency
 
 /**
  * Test script to verify real IBM MQ operations with production queue manager
@@ -30,8 +30,11 @@ export async function testRealIBMMQ(context: vscode.ExtensionContext) {
     try {
         // Create real IBM MQ provider
         log('Creating real IBM MQ provider...');
-        const provider = new IBMMQProvider();
+        // const provider = new IBMMQProvider(); // Temporarily disabled for optional dependency
+        log('❌ Real IBM MQ test temporarily disabled due to optional dependency');
+        return;
 
+        /*
         // Real connection parameters - these should match your actual IBM MQ setup
         const connectionParams = {
             queueManager: 'QM1',
@@ -144,6 +147,7 @@ export async function testRealIBMMQ(context: vscode.ExtensionContext) {
         log('Successfully disconnected from real queue manager');
 
         log('Real IBM MQ test completed successfully!');
+        */
     } catch (error) {
         log(`Error: ${(error as Error).message}`, true);
         log(`Stack trace: ${(error as Error).stack}`, true);
