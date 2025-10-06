@@ -1,38 +1,39 @@
 // Lazy import for IBM MQ to avoid hard dependency
 let mq: any = null;
+let mqLoadAttempted: boolean = false;
+let mqIsRealLibrary: boolean = false;
 
 // Initialize mq with comprehensive mock object to prevent compilation errors
-try {
-    mq = require('ibmmq');
-} catch (error) {
-    // IBM MQ library not available - create comprehensive mock object to prevent compilation errors
-    const mockMQC = new Proxy({}, {
-        get: () => 0 // Return 0 for any MQC constant access
-    });
+// This mock is only for TypeScript compilation - it will be replaced with real library at runtime
+const mockMQC = new Proxy({}, {
+    get: () => 0 // Return 0 for any MQC constant access
+});
 
-    mq = {
-        MQC: mockMQC,
-        MQMD: class { constructor() { Object.assign(this, {}); } },
-        MQPMO: class { constructor() { Object.assign(this, {}); } },
-        MQGMO: class { constructor() { Object.assign(this, {}); } },
-        MQOD: class { constructor() { Object.assign(this, {}); } },
-        MQCNO: class { constructor() { Object.assign(this, {}); } },
-        MQCD: class { constructor() { Object.assign(this, {}); } },
-        MQCSP: class { constructor() { Object.assign(this, {}); } },
-        MQAttr: class { constructor() { Object.assign(this, arguments[0] || {}); } },
-        MQObject: class {},
-        Connx: () => {},
-        Disc: () => {},
-        Open: () => {},
-        Close: () => {},
-        Put: () => {},
-        Get: () => {},
-        GetSync: () => 0,
-        Inq: () => {},
-        Cmit: () => {},
-        Back: () => {}
-    };
-}
+const mockMQ = {
+    MQC: mockMQC,
+    MQMD: class { constructor() { Object.assign(this, {}); } },
+    MQPMO: class { constructor() { Object.assign(this, {}); } },
+    MQGMO: class { constructor() { Object.assign(this, {}); } },
+    MQOD: class { constructor() { Object.assign(this, {}); } },
+    MQCNO: class { constructor() { Object.assign(this, {}); } },
+    MQCD: class { constructor() { Object.assign(this, {}); } },
+    MQCSP: class { constructor() { Object.assign(this, {}); } },
+    MQAttr: class { constructor() { Object.assign(this, arguments[0] || {}); } },
+    MQObject: class {},
+    Connx: () => {},
+    Disc: () => {},
+    Open: () => {},
+    Close: () => {},
+    Put: () => {},
+    Get: () => {},
+    GetSync: () => 0,
+    Inq: () => {},
+    Cmit: () => {},
+    Back: () => {}
+};
+
+// Set initial value to mock for compilation
+mq = mockMQ;
 
 import { IMQProvider, QueueInfo, BrowseOptions, Message, MessageProperties, QueueProperties, TopicInfo, TopicProperties, ChannelInfo, ChannelProperties, ChannelStatus } from './IMQProvider';
 import { IBMMQConnectionProfile } from '../models/connectionProfile';
@@ -57,25 +58,41 @@ export class IBMMQProvider implements IMQProvider {
      * Lazy load IBM MQ library to avoid hard dependency
      */
     private async loadIBMMQLibrary(): Promise<any> {
-        if (mq === null) {
+        // Only attempt to load once
+        if (!mqLoadAttempted) {
+            mqLoadAttempted = true;
             try {
-                mq = require('ibmmq');
-                this.log('✅ IBM MQ library loaded successfully');
-                return mq;
+                const realMQ = require('ibmmq');
+                // Verify it's the real library by checking if MQCNO is a proper constructor
+                if (realMQ && typeof realMQ.MQCNO === 'function') {
+                    mq = realMQ;
+                    mqIsRealLibrary = true;
+                    this.log('✅ IBM MQ library loaded successfully');
+                } else {
+                    throw new Error('IBM MQ library loaded but appears invalid');
+                }
             } catch (error) {
+                mqIsRealLibrary = false;
                 const errorMessage = `IBM MQ library not available: ${(error as Error).message}`;
                 this.log(`❌ ${errorMessage}`, true);
                 throw new Error(`${errorMessage}\n\nTo use IBM MQ functionality, please install the IBM MQ client libraries:\n1. Download IBM MQ client from IBM website\n2. Install the client libraries\n3. Restart VS Code\n\nAlternatively, you can use other messaging providers like RabbitMQ, Kafka, Azure Service Bus, or AWS SQS.`);
             }
         }
-        return mq;
+
+        // If we have the real library, return it
+        if (mqIsRealLibrary) {
+            return mq;
+        }
+
+        // Otherwise throw error
+        throw new Error('IBM MQ library not available. Please install IBM MQ client libraries.');
     }
 
     /**
      * Get IBM MQ library (synchronous version for cases where we know it's already loaded)
      */
     private getMQLibrary(): any {
-        if (mq === null) {
+        if (!mqIsRealLibrary) {
             throw new Error('IBM MQ library not loaded. Call loadIBMMQLibrary() first.');
         }
         return mq;

@@ -225,17 +225,17 @@ async function testVersionAndDocumentation() {
         
         console.log(`✅ Package version updated to: ${packageJson.version}`);
         
-        if (packageJson.version === '0.3.0') {
-            console.log(`✅ Version correctly updated to 0.3.0`);
+        if (packageJson.version === '0.4.0') {
+            console.log(`✅ Version correctly updated to 0.4.0`);
         } else {
-            console.log(`❌ Version not updated correctly, expected 0.3.0, got ${packageJson.version}`);
+            console.log(`❌ Version not updated correctly, expected 0.4.0, got ${packageJson.version}`);
         }
 
         // Check if CHANGELOG.md exists and has new entries
         const changelogPath = path.join(__dirname, '../../CHANGELOG.md');
         if (fs.existsSync(changelogPath)) {
             const changelog = fs.readFileSync(changelogPath, 'utf8');
-            if (changelog.includes('0.3.0') && changelog.includes('IBM MQ Message Timestamp Display')) {
+            if (changelog.includes('0.4.0') && changelog.includes('IBM MQ Message Timestamp Display')) {
                 console.log(`✅ CHANGELOG.md updated with new version and features`);
             } else {
                 console.log(`❌ CHANGELOG.md missing new version entries`);
@@ -286,7 +286,7 @@ export async function runComprehensiveFixesTest(): Promise<void> {
 
         if (timestampTestResult && allFixesTestResult && versionTestResult) {
             console.log('\n🎉 All comprehensive tests PASSED!');
-            console.log('\n🚀 MQExplorer v0.3.0 is ready for release!');
+            console.log('\n🚀 MQExplorer v0.4.0 is ready for release!');
         } else {
             console.log('\n❌ Some tests FAILED - review and fix issues before release');
         }

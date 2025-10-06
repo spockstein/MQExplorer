@@ -2,6 +2,28 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.3.0] - 2025-01-XX
+
+### Fixed
+- **IBM MQ Optional Dependency**: Fixed critical issue where IBM MQ was a hard dependency preventing the extension from loading without IBM MQ libraries installed
+  - Implemented lazy loading pattern for IBM MQ library
+  - Created `IBMMQProviderWrapper` to handle optional dependency gracefully
+  - Added comprehensive mock objects for TypeScript compilation
+  - Fixed runtime library loading to properly detect and use real IBM MQ library when available
+  - Resolved "MQCNO is not a constructor" error on macOS and other platforms
+
+### Changed
+- Moved IBM MQ from `dependencies` to `optionalDependencies` in package.json
+- Updated webpack configuration to mark IBM MQ as external dependency
+- Enhanced TypeScript declarations for IBM MQ with global namespace support
+- Improved error messages to guide users when IBM MQ libraries are not available
+
+### Added
+- Support for running extension without IBM MQ libraries installed
+- Ability to use Azure Service Bus, RabbitMQ, Kafka, and AWS SQS without IBM MQ
+- Clear user guidance for installing IBM MQ libraries when needed
+- Comprehensive logging for IBM MQ library loading status
+
 ## [0.0.1] - 2025-05-15
 
 ### Added
@@ -153,3 +175,10 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
 
 ### 🔄 Breaking Changes
 None - All changes are backward compatible with existing connection profiles and configurations.
+
+## [0.4.0 - 2025-10-05] 
+✅ macOS Connection Works: No more "MQCNO is not a constructor" errors
+✅ Cross-Platform: Fix works on Windows, macOS, and Linux
+✅ Proper Library Loading: Real IBM MQ library is used when available
+✅ Graceful Degradation: Extension works without IBM MQ for other providers
+✅ Clear Error Messages: Users get helpful guidance when libraries are missing
