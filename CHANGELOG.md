@@ -176,9 +176,35 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
 ### 🔄 Breaking Changes
 None - All changes are backward compatible with existing connection profiles and configurations.
 
-## [0.4.0 - 2025-10-05] 
-✅ macOS Connection Works: No more "MQCNO is not a constructor" errors
-✅ Cross-Platform: Fix works on Windows, macOS, and Linux
-✅ Proper Library Loading: Real IBM MQ library is used when available
-✅ Graceful Degradation: Extension works without IBM MQ for other providers
-✅ Clear Error Messages: Users get helpful guidance when libraries are missing
+## [0.5.0] - 2026-01-01
+
+### 🐛 Bug Fixes
+
+#### RabbitMQ Message Browsing Fixed
+- **Critical Fix**: Fixed issue where RabbitMQ queues showed correct depth but displayed "No messages found"
+- **Root Cause**: The `browseMessages()` method was using an invalid AMQP queue binding approach that never retrieved actual messages
+- **Solution**: Replaced with RabbitMQ Management API's `/api/queues/{vhost}/{queue}/get` endpoint for non-destructive message peeking
+- **Result**: Messages now display correctly when browsing RabbitMQ queues
+
+### ✨ New Features
+
+#### Configurable RabbitMQ Management Port
+- **New Setting**: Added `managementPort` field to RabbitMQ connection profiles
+- **Default**: Port 15672 (standard RabbitMQ Management API port)
+- **Use Case**: Allows users with non-standard management port configurations (Docker, reverse proxies, etc.) to connect properly
+- **UI**: New "Management API Port" input field in RabbitMQ connection profile form with help text
+
+### 🔧 Technical Improvements
+- Added `getManagementPort()` helper method in RabbitMQProvider for consistent port usage
+- Updated all 6 Management API calls to use configurable port instead of hardcoded 15672
+- Improved message payload decoding to handle both base64 and UTF-8 encoded payloads
+- Added additional RabbitMQ-specific message properties (exchange, routingKey, redelivered)
+
+## [0.4.0] - 2025-10-05
+
+### Fixed
+- macOS Connection Works: No more "MQCNO is not a constructor" errors
+- Cross-Platform: Fix works on Windows, macOS, and Linux
+- Proper Library Loading: Real IBM MQ library is used when available
+- Graceful Degradation: Extension works without IBM MQ for other providers
+- Clear Error Messages: Users get helpful guidance when libraries are missing
