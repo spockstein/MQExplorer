@@ -49,12 +49,23 @@ Connect to all major messaging systems from a single interface:
 - **Put Messages** - Send new messages with customizable properties
 - **Delete Messages** - Remove individual messages or clear entire queues with improved reliability
 - **Save Messages** - Export message content to files
+- **Export Full Message** - Save both payload and headers as JSON for debugging and snapshot testing
 - **View Formats** - See messages in text, hex, JSON, or XML formats
 - **Auto-Refresh** - Message lists automatically update after put/delete/clear operations
 
 <p align="center">
   <i>[Screenshot: MQExplorer message browser interface]</i>
 </p>
+
+### 🎨 Syntax Highlighting
+- **JSON Highlighting** - Message payloads containing JSON are displayed with full syntax highlighting
+  - Keys in light blue, strings in orange, numbers in light green
+  - Booleans and null in blue, brackets in gold
+- **XML Highlighting** - XML payloads receive syntax highlighting
+  - Tag names in blue, attribute names in light blue, attribute values in orange
+  - Comments in green italic, XML declarations in purple
+- **Theme Aware** - Colors automatically adapt to VS Code's light and dark themes
+- **Auto-Detection** - JSON/XML tabs automatically appear when valid content is detected
 
 ### 🔒 Secure Connection Management
 - Create and save connection profiles for all supported providers
@@ -117,10 +128,13 @@ Channel: DEV.APP.SVRCONN
 2. Enter the following details:
    - **Host**: The hostname or IP address of the RabbitMQ server
    - **Port**: The AMQP port (default: 5672)
+   - **Management API Port**: Port for RabbitMQ Management API (default: 15672) - used for browsing messages and queue information
    - **Virtual Host**: The virtual host to connect to (default: "/")
    - **Username**: Your RabbitMQ username (default: "guest")
    - **Password**: Your RabbitMQ password (default: "guest")
    - **Use TLS**: Check this if you need to use a secure connection
+
+> **Note**: The Management API port is configurable to support Docker containers, reverse proxies, or non-standard RabbitMQ configurations.
 
 ### Kafka Connection
 
@@ -201,16 +215,34 @@ Channel: DEV.APP.SVRCONN
 
 See the [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-### Latest Release: v0.2.0
+### Latest Release: v0.5.4
 
-Major improvements and new features:
-- **Known Queues Configuration**: Pre-configure queue names for faster discovery and fallback
-- **Optimized Queue Discovery**: Significant performance improvements for IBM MQ connections
-- **Fixed Message Delete Operations**: Reliable message deletion with proper error handling
-- **Automatic Message List Refresh**: UI automatically updates after put/delete/clear operations
-- **Real IBM MQ Timestamps**: Display actual message timestamps from MQMD instead of browse time
-- Enhanced connection management for all supported messaging systems
-- Improved error handling and user feedback
+#### v0.5.4 - Export Full Message with Headers
+- **New Feature**: Added "Save Full Message" button to export message payload along with headers as JSON
+- Export includes message ID, correlation ID, timestamp, and all message properties
+- Smart payload handling: JSON payloads are parsed and formatted, strings kept as-is
+
+#### v0.5.3 - Text Tab JSON Formatting
+- **Fixed**: Text tab now displays formatted JSON with syntax highlighting when payload is valid JSON
+- Both Text and JSON tabs show consistent formatted output for JSON payloads
+
+#### v0.5.2 - JSON Headers Rendering
+- **Fixed**: Message headers containing JSON objects/arrays (like `x-death`) now render properly instead of `[object Object]`
+- Large JSON values in headers displayed in scrollable containers
+
+#### v0.5.1 - JSON & XML Syntax Highlighting
+- **New Feature**: Message payloads with JSON/XML content now display with full syntax highlighting
+- Theme-aware colors that adapt to VS Code's light and dark themes
+- Auto-detection of JSON/XML content with dedicated tabs
+
+#### v0.5.0 - RabbitMQ Message Browsing Fix
+- **Critical Fix**: Fixed issue where RabbitMQ queues showed correct depth but displayed "No messages found"
+- **New Feature**: Configurable RabbitMQ Management API port for non-standard configurations
+- Improved message payload decoding for both base64 and UTF-8 encoded payloads
+
+#### Previous Releases
+- **v0.2.0**: Known Queues Configuration, Optimized Queue Discovery, Fixed Message Delete Operations
+- **v0.4.0**: macOS Connection Fix, Cross-Platform Support, Graceful Degradation without IBM MQ
 
 ## 📄 License
 

@@ -94,7 +94,7 @@ export class MessageBrowserWebview {
                         vscode.window.showInformationMessage('Copied to clipboard');
                         break;
                     case 'saveToFile':
-                        await this.saveMessageToFile(message.messageIndex);
+                        await this.saveMessageToFile(message.messageIndex, message.includeHeaders);
                         break;
                     case 'refresh':
                         await this.loadMessages();
@@ -268,22 +268,25 @@ export class MessageBrowserWebview {
     }
 
     /**
-     * Save message payload to a file
+     * Save message payload (and optionally headers) to a file
      */
-    private async saveMessageToFile(messageIndex: number): Promise<void> {
+    private async saveMessageToFile(messageIndex: number, includeHeaders: boolean = false): Promise<void> {
         if (messageIndex < 0 || messageIndex >= this.messages.length) {
             return;
         }
 
         const message = this.messages[messageIndex];
 
+        // Determine file extension and filters based on whether we're including headers
+        const defaultExtension = includeHeaders ? 'json' : 'txt';
+        const filters: { [name: string]: string[] } = includeHeaders
+            ? { 'JSON Files': ['json'], 'All Files': ['*'] }
+            : { 'Text Files': ['txt'], 'All Files': ['*'] };
+
         // Show save dialog
         const uri = await vscode.window.showSaveDialog({
-            defaultUri: vscode.Uri.file(`message_${message.id}.txt`),
-            filters: {
-                'Text Files': ['txt'],
-                'All Files': ['*']
-            }
+            defaultUri: vscode.Uri.file(`message_${message.id}.${defaultExtension}`),
+            filters: filters
         });
 
         if (uri) {
@@ -293,10 +296,37 @@ export class MessageBrowserWebview {
                     ? message.payload
                     : message.payload.toString('utf8');
 
-                // Write to file
-                await vscode.workspace.fs.writeFile(uri, Buffer.from(payload));
+                let content: string;
 
-                vscode.window.showInformationMessage('Message saved to file');
+                if (includeHeaders) {
+                    // Export full message with headers and payload
+                    const fullMessage = {
+                        headers: {
+                            id: message.id,
+                            correlationId: message.correlationId,
+                            timestamp: message.timestamp,
+                            properties: message.properties
+                        },
+                        payload: payload
+                    };
+
+                    // Try to parse payload as JSON for better formatting
+                    try {
+                        fullMessage.payload = JSON.parse(payload);
+                    } catch {
+                        // Keep as string if not valid JSON
+                    }
+
+                    content = JSON.stringify(fullMessage, null, 2);
+                } else {
+                    // Export payload only
+                    content = payload;
+                }
+
+                // Write to file
+                await vscode.workspace.fs.writeFile(uri, Buffer.from(content));
+
+                vscode.window.showInformationMessage(includeHeaders ? 'Full message saved to file' : 'Message saved to file');
             } catch (error) {
                 vscode.window.showErrorMessage(`Error saving message: ${(error as Error).message}`);
             }
@@ -654,6 +684,7 @@ export class MessageBrowserWebview {
                         <button id="copyMsgIdBtn">Copy ID</button>
                         <button id="copyCorrelIdBtn">Copy Correl ID</button>
                         <button id="savePayloadBtn">Save Payload</button>
+                        <button id="saveFullMessageBtn">Save Full Message</button>
                         <button id="deleteMessageBtn" class="delete-btn">Delete Message</button>
                     </div>
                 </div>
@@ -858,7 +889,19 @@ export class MessageBrowserWebview {
                         if (selectedMessageIndex >= 0) {
                             vscode.postMessage({
                                 command: 'saveToFile',
-                                messageIndex: selectedMessageIndex
+                                messageIndex: selectedMessageIndex,
+                                includeHeaders: false
+                            });
+                        }
+                    });
+
+                    // Handle save full message (payload + headers)
+                    document.getElementById('saveFullMessageBtn').addEventListener('click', () => {
+                        if (selectedMessageIndex >= 0) {
+                            vscode.postMessage({
+                                command: 'saveToFile',
+                                messageIndex: selectedMessageIndex,
+                                includeHeaders: true
                             });
                         }
                     });
@@ -1033,20 +1076,22 @@ export class MessageBrowserWebview {
                         const jsonPayload = document.getElementById('jsonPayload');
                         const xmlPayload = document.getElementById('xmlPayload');
 
-                        // Set text payload
-                        textPayload.textContent = message.payload || '';
-
                         // Set hex payload
                         hexPayload.textContent = stringToHex(message.payload || '');
 
-                        // Set JSON payload with syntax highlighting
+                        // Try to detect and format JSON in both Text and JSON tabs
+                        let isValidJson = false;
+                        let formattedJson = '';
+
                         if (message.payload) {
                             try {
                                 // Try to parse as JSON
                                 const jsonObj = JSON.parse(message.payload);
                                 // Format with indentation
-                                const formattedJson = JSON.stringify(jsonObj, null, 2);
-                                // Apply syntax highlighting (using innerHTML for colored spans)
+                                formattedJson = JSON.stringify(jsonObj, null, 2);
+                                isValidJson = true;
+
+                                // Apply syntax highlighting to JSON tab
                                 jsonPayload.innerHTML = highlightJson(formattedJson);
                                 // Show the JSON tab if it's valid JSON
                                 document.querySelector('.tab[data-tab="json"]').style.display = 'block';
@@ -1059,6 +1104,14 @@ export class MessageBrowserWebview {
                         } else {
                             jsonPayload.textContent = '';
                             document.querySelector('.tab[data-tab="json"]').style.display = 'none';
+                        }
+
+                        // Set text payload - format JSON if valid, otherwise show raw
+                        if (isValidJson) {
+                            // Show formatted JSON with syntax highlighting in Text tab too
+                            textPayload.innerHTML = highlightJson(formattedJson);
+                        } else {
+                            textPayload.textContent = message.payload || '';
                         }
 
                         // Set XML payload with syntax highlighting

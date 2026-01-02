@@ -2,6 +2,17 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.4] - 2026-01-02
+
+### ✨ New Features
+
+#### Export Full Message with Headers (Issue #7)
+- **New Feature**: Added "Save Full Message" button to export message payload along with headers
+- **JSON Export**: When saving full message, exports as formatted JSON containing both `headers` and `payload`
+- **Headers Included**: Export includes message ID, correlation ID, timestamp, and all message properties
+- **Smart Payload Handling**: If payload is valid JSON, it's included as parsed JSON object; otherwise as string
+- **Existing Behavior Preserved**: "Save Payload" button continues to export payload only as text file
+
 ## [0.3.0] - 2025-01-XX
 
 ### Fixed
@@ -175,6 +186,16 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
 
 ### 🔄 Breaking Changes
 None - All changes are backward compatible with existing connection profiles and configurations.
+
+## [0.5.3] - 2026-01-02
+
+### 🐛 Bug Fixes
+
+#### Text Tab Now Shows Formatted JSON Payload (Issue #6 - Complete Fix)
+- **Fixed**: The Text tab was showing raw unformatted JSON payload even when the payload was valid JSON
+- **Solution**: Text tab now displays formatted JSON with syntax highlighting when the payload is valid JSON
+- **Consistency**: Both Text and JSON tabs now show the same formatted, highlighted JSON for JSON payloads
+- **Non-JSON**: For non-JSON payloads, the Text tab continues to show the raw content as before
 
 ## [0.5.2] - 2026-01-02
 

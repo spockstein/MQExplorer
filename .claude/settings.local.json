@@ -3,7 +3,8 @@
     "allow": [
       "Bash(gh issue:*)",
       "Bash(npm run compile:*)",
-      "Bash(npx @vscode/vsce:*)"
+      "Bash(npx @vscode/vsce:*)",
+      "Bash(npm run package:*)"
     ]
   }
 }
