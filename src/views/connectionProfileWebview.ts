@@ -107,6 +107,7 @@ export class ConnectionProfileWebview {
                 return {
                     host: '',
                     port: 5672,
+                    managementPort: 15672,
                     vhost: '/',
                     username: 'guest',
                     password: 'guest',
@@ -353,8 +354,16 @@ export class ConnectionProfileWebview {
                 </div>
 
                 <div class="form-group">
-                    <label for="rabbitmq_port">Port</label>
+                    <label for="rabbitmq_port">Port (AMQP)</label>
                     <input type="number" id="rabbitmq_port" value="${rabbitmqParams ? rabbitmqParams.port || 5672 : 5672}" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="rabbitmq_management_port">Management API Port</label>
+                    <input type="number" id="rabbitmq_management_port" value="${rabbitmqParams ? rabbitmqParams.managementPort || 15672 : 15672}">
+                    <div class="help-text">
+                        <small>Port for RabbitMQ Management API (default: 15672). Used for browsing messages and queue information.</small>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -760,6 +769,7 @@ export class ConnectionProfileWebview {
                         } else if (providerType === 'rabbitmq') {
                             const host = document.getElementById('rabbitmq_host').value;
                             const port = parseInt(document.getElementById('rabbitmq_port').value, 10);
+                            const managementPort = parseInt(document.getElementById('rabbitmq_management_port').value, 10);
                             const vhost = document.getElementById('vhost').value;
                             const username = document.getElementById('rabbitmq_username').value;
                             const password = document.getElementById('rabbitmq_password').value;
@@ -776,6 +786,7 @@ export class ConnectionProfileWebview {
                             newProfile.connectionParams = {
                                 host,
                                 port,
+                                managementPort: managementPort || 15672,
                                 vhost: vhost || '/',
                                 username: username || 'guest',
                                 password: password || 'guest',
@@ -1071,6 +1082,7 @@ export class ConnectionProfileWebview {
                         } else if (providerType === 'rabbitmq') {
                             const host = document.getElementById('rabbitmq_host').value;
                             const port = parseInt(document.getElementById('rabbitmq_port').value, 10);
+                            const managementPort = parseInt(document.getElementById('rabbitmq_management_port').value, 10);
                             const vhost = document.getElementById('vhost').value;
                             const username = document.getElementById('rabbitmq_username').value;
                             const password = document.getElementById('rabbitmq_password').value;
@@ -1079,6 +1091,7 @@ export class ConnectionProfileWebview {
                             testProfile.connectionParams = {
                                 host,
                                 port,
+                                managementPort: managementPort || 15672,
                                 vhost: vhost || '/',
                                 username: username || 'guest',
                                 password: password || 'guest',
@@ -1289,6 +1302,7 @@ export class ConnectionProfileWebview {
 
                             case 'rabbitmq':
                                 document.getElementById('rabbitmq_port').value = '5672';
+                                document.getElementById('rabbitmq_management_port').value = '15672';
                                 document.getElementById('vhost').value = '/';
                                 document.getElementById('rabbitmq_username').value = 'guest';
                                 document.getElementById('rabbitmq_password').value = 'guest';

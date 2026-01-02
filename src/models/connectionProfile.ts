@@ -38,6 +38,7 @@ export interface RabbitMQConnectionProfile extends ConnectionProfile {
     connectionParams: {
         host: string;
         port: number;
+        managementPort?: number; // Management API port (default: 15672)
         vhost?: string;
         username?: string;
         password?: string; // password is stored separately in SecretStorage

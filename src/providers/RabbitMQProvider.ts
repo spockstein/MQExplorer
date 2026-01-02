@@ -133,7 +133,7 @@ export class RabbitMQProvider implements IMQProvider {
             this.log('Listing queues');
 
             // Get all queues from the server
-            const response = await fetch(`http://${this.connectionParams?.host}:15672/api/queues${this.connectionParams?.vhost ? '/' + encodeURIComponent(this.connectionParams.vhost) : ''}`, {
+            const response = await fetch(`http://${this.connectionParams?.host}:${this.getManagementPort()}/api/queues${this.connectionParams?.vhost ? '/' + encodeURIComponent(this.connectionParams.vhost) : ''}`, {
                 headers: {
                     'Authorization': 'Basic ' + Buffer.from(`${this.connectionParams?.username || 'guest'}:${this.connectionParams?.password || 'guest'}`).toString('base64')
                 }
@@ -176,7 +176,7 @@ export class RabbitMQProvider implements IMQProvider {
             this.log('Listing topics (exchanges)');
 
             // Get all exchanges from the server
-            const response = await fetch(`http://${this.connectionParams?.host}:15672/api/exchanges${this.connectionParams?.vhost ? '/' + encodeURIComponent(this.connectionParams.vhost) : ''}`, {
+            const response = await fetch(`http://${this.connectionParams?.host}:${this.getManagementPort()}/api/exchanges${this.connectionParams?.vhost ? '/' + encodeURIComponent(this.connectionParams.vhost) : ''}`, {
                 headers: {
                     'Authorization': 'Basic ' + Buffer.from(`${this.connectionParams?.username || 'guest'}:${this.connectionParams?.password || 'guest'}`).toString('base64')
                 }
@@ -215,6 +215,8 @@ export class RabbitMQProvider implements IMQProvider {
 
     /**
      * Browse messages in a queue (non-destructive peek)
+     * Uses RabbitMQ Management API's /api/queues/{vhost}/{queue}/get endpoint
+     * which allows peeking at messages without consuming them
      * @param queueName Name of the queue to browse
      * @param options Options for browsing (limit, filter, etc.)
      */
@@ -226,54 +228,70 @@ export class RabbitMQProvider implements IMQProvider {
             const limit = options?.limit || 10;
             const startPosition = options?.startPosition || 0;
 
-            // Create a temporary queue for browsing
-            const tempQueueName = `temp-browse-${uuidv4()}`;
-            await this.channel!.assertQueue(tempQueueName, { exclusive: true, autoDelete: true });
-
-            // Bind the temporary queue to the target queue using the Shovel plugin
-            // This is a workaround since RabbitMQ doesn't have a native browse/peek functionality
-            const bindOk = await this.channel!.bindQueue(tempQueueName, 'amq.direct', queueName);
-
-            // Get messages from the temporary queue
-            const messages: Message[] = [];
-            let messageCount = 0;
-
-            // Use get with noAck to peek at messages
-            while (messageCount < limit + startPosition) {
-                const msg = await this.channel!.get(tempQueueName, { noAck: true });
-                if (!msg) {
-                    break; // No more messages
+            // Use Management API to peek at messages without consuming them
+            // The 'ackmode' of 'ack_requeue_true' means messages are requeued after reading
+            const response = await fetch(
+                `http://${this.connectionParams?.host}:${this.getManagementPort()}/api/queues/${encodeURIComponent(this.connectionParams?.vhost || '%2F')}/${encodeURIComponent(queueName)}/get`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': 'Basic ' + Buffer.from(`${this.connectionParams?.username || 'guest'}:${this.connectionParams?.password || 'guest'}`).toString('base64'),
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        count: limit + startPosition,
+                        ackmode: 'ack_requeue_true',  // Requeue messages after reading (non-destructive)
+                        encoding: 'auto',
+                        truncate: 50000  // Truncate large messages at 50KB for display
+                    })
                 }
+            );
 
-                if (messageCount >= startPosition) {
-                    const message: Message = {
-                        id: msg.properties.messageId || uuidv4(),
-                        correlationId: msg.properties.correlationId,
-                        timestamp: msg.properties.timestamp ? new Date(msg.properties.timestamp) : new Date(),
-                        payload: msg.content,
-                        properties: {
-                            ...msg.properties,
-                            contentType: msg.properties.contentType,
-                            contentEncoding: msg.properties.contentEncoding,
-                            headers: msg.properties.headers,
-                            deliveryMode: msg.properties.deliveryMode,
-                            priority: msg.properties.priority,
-                            replyTo: msg.properties.replyTo,
-                            expiration: msg.properties.expiration,
-                            type: msg.properties.type,
-                            userId: msg.properties.userId,
-                            appId: msg.properties.appId
-                        }
-                    };
-
-                    messages.push(message);
-                }
-
-                messageCount++;
+            if (!response.ok) {
+                throw new Error(`Failed to browse messages: ${response.statusText}`);
             }
 
-            // Delete the temporary queue
-            await this.channel!.deleteQueue(tempQueueName);
+            const rawMessages = await response.json() as any[];
+            const messages: Message[] = [];
+
+            // Skip messages before startPosition and convert to Message format
+            for (let i = startPosition; i < rawMessages.length && messages.length < limit; i++) {
+                const msg = rawMessages[i];
+
+                // Decode payload based on encoding
+                let payload: Buffer;
+                if (msg.payload_encoding === 'base64') {
+                    payload = Buffer.from(msg.payload, 'base64');
+                } else {
+                    payload = Buffer.from(msg.payload, 'utf8');
+                }
+
+                const message: Message = {
+                    id: msg.properties?.message_id || `msg-${i}-${Date.now()}`,
+                    correlationId: msg.properties?.correlation_id,
+                    timestamp: msg.properties?.timestamp ? new Date(msg.properties.timestamp * 1000) : new Date(),
+                    payload: payload,
+                    properties: {
+                        contentType: msg.properties?.content_type,
+                        contentEncoding: msg.properties?.content_encoding,
+                        headers: msg.properties?.headers,
+                        deliveryMode: msg.properties?.delivery_mode,
+                        priority: msg.properties?.priority,
+                        replyTo: msg.properties?.reply_to,
+                        expiration: msg.properties?.expiration,
+                        type: msg.properties?.type,
+                        userId: msg.properties?.user_id,
+                        appId: msg.properties?.app_id,
+                        // Additional RabbitMQ-specific properties
+                        exchange: msg.exchange,
+                        routingKey: msg.routing_key,
+                        redelivered: msg.redelivered,
+                        messageCount: msg.message_count
+                    }
+                };
+
+                messages.push(message);
+            }
 
             // Cache the messages for later operations
             if (!this.messageCache.has(queueName)) {
@@ -543,8 +561,7 @@ export class RabbitMQProvider implements IMQProvider {
             this.log(`Getting properties for queue: ${queueName}`);
 
             // Get queue information from the management API
-            const response = await fetch(`http://${this.connectionParams?.host}:15672/api/queues/${encodeURIComponent(this.connectionParams?.vhost || '')}/
-${encodeURIComponent(queueName)}`, {
+            const response = await fetch(`http://${this.connectionParams?.host}:${this.getManagementPort()}/api/queues/${encodeURIComponent(this.connectionParams?.vhost || '')}/${encodeURIComponent(queueName)}`, {
                 headers: {
                     'Authorization': 'Basic ' + Buffer.from(`${this.connectionParams?.username || 'guest'}:${this.connectionParams?.password || 'guest'}`).toString('base64')
                 }
@@ -588,8 +605,7 @@ ${encodeURIComponent(queueName)}`, {
             this.checkConnection();
 
             // Get queue information from the management API
-            const response = await fetch(`http://${this.connectionParams?.host}:15672/api/queues/${encodeURIComponent(this.connectionParams?.vhost || '')}/
-${encodeURIComponent(queueName)}`, {
+            const response = await fetch(`http://${this.connectionParams?.host}:${this.getManagementPort()}/api/queues/${encodeURIComponent(this.connectionParams?.vhost || '')}/${encodeURIComponent(queueName)}`, {
                 headers: {
                     'Authorization': 'Basic ' + Buffer.from(`${this.connectionParams?.username || 'guest'}:${this.connectionParams?.password || 'guest'}`).toString('base64')
                 }
@@ -617,8 +633,7 @@ ${encodeURIComponent(queueName)}`, {
             this.log(`Getting properties for topic: ${topicName}`);
 
             // Get exchange information from the management API
-            const response = await fetch(`http://${this.connectionParams?.host}:15672/api/exchanges/${encodeURIComponent(this.connectionParams?.vhost || '')}/
-${encodeURIComponent(topicName)}`, {
+            const response = await fetch(`http://${this.connectionParams?.host}:${this.getManagementPort()}/api/exchanges/${encodeURIComponent(this.connectionParams?.vhost || '')}/${encodeURIComponent(topicName)}`, {
                 headers: {
                     'Authorization': 'Basic ' + Buffer.from(`${this.connectionParams?.username || 'guest'}:${this.connectionParams?.password || 'guest'}`).toString('base64')
                 }
@@ -658,6 +673,13 @@ ${encodeURIComponent(topicName)}`, {
         if (!this.isConnected()) {
             throw new Error('Not connected to RabbitMQ');
         }
+    }
+
+    /**
+     * Get the Management API port (defaults to 15672)
+     */
+    private getManagementPort(): number {
+        return this.connectionParams?.managementPort || 15672;
     }
 
     /**

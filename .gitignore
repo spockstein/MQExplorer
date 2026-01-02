@@ -3,3 +3,9 @@ dist
 node_modules
 .vscode-test/
 *.vsix
+docs/
+PLANNING.MD
+PROGRESS.md
+TASKS.md
+VIDEO_TUTORIALS.md
+MARKETPLACE_README.md
