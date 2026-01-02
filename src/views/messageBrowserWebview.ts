@@ -476,6 +476,48 @@ export class MessageBrowserWebview {
                     font-family: monospace;
                     white-space: pre-wrap;
                 }
+                /* JSON Syntax Highlighting */
+                .json-key {
+                    color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+                }
+                .json-string {
+                    color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+                }
+                .json-number {
+                    color: var(--vscode-symbolIcon-numberForeground, #b5cea8);
+                }
+                .json-boolean {
+                    color: var(--vscode-symbolIcon-booleanForeground, #569cd6);
+                }
+                .json-null {
+                    color: var(--vscode-symbolIcon-nullForeground, #569cd6);
+                }
+                .json-bracket {
+                    color: var(--vscode-editorBracketMatch-border, #ffd700);
+                }
+                .json-colon, .json-comma {
+                    color: var(--vscode-foreground, #d4d4d4);
+                }
+                /* XML Syntax Highlighting */
+                .xml-tag {
+                    color: var(--vscode-symbolIcon-classForeground, #569cd6);
+                }
+                .xml-attr-name {
+                    color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+                }
+                .xml-attr-value {
+                    color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+                }
+                .xml-content {
+                    color: var(--vscode-foreground, #d4d4d4);
+                }
+                .xml-comment {
+                    color: var(--vscode-symbolIcon-commentForeground, #6a9955);
+                    font-style: italic;
+                }
+                .xml-declaration {
+                    color: var(--vscode-symbolIcon-keywordForeground, #c586c0);
+                }
                 .tabs {
                     display: flex;
                     margin-bottom: 10px;
@@ -997,13 +1039,15 @@ export class MessageBrowserWebview {
                         // Set hex payload
                         hexPayload.textContent = stringToHex(message.payload || '');
 
-                        // Set JSON payload
+                        // Set JSON payload with syntax highlighting
                         if (message.payload) {
                             try {
                                 // Try to parse as JSON
                                 const jsonObj = JSON.parse(message.payload);
                                 // Format with indentation
-                                jsonPayload.textContent = JSON.stringify(jsonObj, null, 2);
+                                const formattedJson = JSON.stringify(jsonObj, null, 2);
+                                // Apply syntax highlighting (using innerHTML for colored spans)
+                                jsonPayload.innerHTML = highlightJson(formattedJson);
                                 // Show the JSON tab if it's valid JSON
                                 document.querySelector('.tab[data-tab="json"]').style.display = 'block';
                             } catch (e) {
@@ -1017,14 +1061,15 @@ export class MessageBrowserWebview {
                             document.querySelector('.tab[data-tab="json"]').style.display = 'none';
                         }
 
-                        // Set XML payload
+                        // Set XML payload with syntax highlighting
                         if (message.payload) {
                             try {
                                 // Check if it looks like XML (starts with < and contains closing tags)
                                 if (message.payload.trim().startsWith('<') && message.payload.includes('</')) {
                                     // Simple XML formatting (this is not a full XML parser)
                                     const formattedXml = formatXml(message.payload);
-                                    xmlPayload.textContent = formattedXml;
+                                    // Apply syntax highlighting (using innerHTML for colored spans)
+                                    xmlPayload.innerHTML = highlightXml(formattedXml);
                                     // Show the XML tab if it looks like XML
                                     document.querySelector('.tab[data-tab="xml"]').style.display = 'block';
                                 } else {
@@ -1059,7 +1104,33 @@ export class MessageBrowserWebview {
                         const valueCell = row.insertCell(1);
 
                         nameCell.textContent = name;
-                        valueCell.textContent = value;
+
+                        // Handle different value types
+                        if (value === null || value === undefined) {
+                            valueCell.textContent = '';
+                        } else if (typeof value === 'object') {
+                            // For objects and arrays, format as JSON with syntax highlighting
+                            try {
+                                const jsonStr = JSON.stringify(value, null, 2);
+                                const pre = document.createElement('pre');
+                                pre.style.margin = '0';
+                                pre.style.whiteSpace = 'pre-wrap';
+                                pre.style.wordBreak = 'break-word';
+                                pre.style.maxHeight = '200px';
+                                pre.style.overflow = 'auto';
+                                pre.style.fontSize = '12px';
+                                pre.style.backgroundColor = 'var(--vscode-editor-background)';
+                                pre.style.padding = '4px';
+                                pre.style.borderRadius = '3px';
+                                pre.innerHTML = highlightJson(jsonStr);
+                                valueCell.appendChild(pre);
+                            } catch (e) {
+                                // Fallback to string representation
+                                valueCell.textContent = String(value);
+                            }
+                        } else {
+                            valueCell.textContent = String(value);
+                        }
                     }
 
                     function stringToHex(str) {
@@ -1124,6 +1195,193 @@ export class MessageBrowserWebview {
                         }
 
                         return formatted;
+                    }
+
+                    // JSON Syntax Highlighter - returns HTML with span elements for highlighting
+                    function highlightJson(jsonStr) {
+                        // Escape HTML entities first
+                        const escapeHtml = (str) => str
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;');
+
+                        let result = '';
+                        let i = 0;
+                        let inString = false;
+                        let stringChar = '';
+                        let currentToken = '';
+
+                        while (i < jsonStr.length) {
+                            const char = jsonStr[i];
+
+                            if (inString) {
+                                currentToken += char;
+                                if (char === stringChar && jsonStr[i - 1] !== '\\\\') {
+                                    inString = false;
+                                    // Check if this is a key (followed by :)
+                                    let j = i + 1;
+                                    while (j < jsonStr.length && /\\s/.test(jsonStr[j])) j++;
+                                    const isKey = jsonStr[j] === ':';
+                                    const className = isKey ? 'json-key' : 'json-string';
+                                    result += '<span class="' + className + '">' + escapeHtml(currentToken) + '</span>';
+                                    currentToken = '';
+                                }
+                            } else if (char === '"' || char === "'") {
+                                inString = true;
+                                stringChar = char;
+                                currentToken = char;
+                            } else if (char === '{' || char === '}' || char === '[' || char === ']') {
+                                result += '<span class="json-bracket">' + char + '</span>';
+                            } else if (char === ':') {
+                                result += '<span class="json-colon">:</span>';
+                            } else if (char === ',') {
+                                result += '<span class="json-comma">,</span>';
+                            } else if (/[0-9.\\-]/.test(char)) {
+                                // Collect the full number
+                                let num = char;
+                                while (i + 1 < jsonStr.length && /[0-9.eE\\-+]/.test(jsonStr[i + 1])) {
+                                    i++;
+                                    num += jsonStr[i];
+                                }
+                                result += '<span class="json-number">' + num + '</span>';
+                            } else if (jsonStr.substring(i, i + 4) === 'true') {
+                                result += '<span class="json-boolean">true</span>';
+                                i += 3;
+                            } else if (jsonStr.substring(i, i + 5) === 'false') {
+                                result += '<span class="json-boolean">false</span>';
+                                i += 4;
+                            } else if (jsonStr.substring(i, i + 4) === 'null') {
+                                result += '<span class="json-null">null</span>';
+                                i += 3;
+                            } else {
+                                result += char;
+                            }
+                            i++;
+                        }
+
+                        return result;
+                    }
+
+                    // XML Syntax Highlighter - returns HTML with span elements for highlighting
+                    function highlightXml(xmlStr) {
+                        // Escape HTML entities first, but we'll unescape for display
+                        const escapeHtml = (str) => str
+                            .replace(/&/g, '&amp;')
+                            .replace(/</g, '&lt;')
+                            .replace(/>/g, '&gt;')
+                            .replace(/"/g, '&quot;');
+
+                        let result = '';
+                        let i = 0;
+
+                        while (i < xmlStr.length) {
+                            // Check for comments
+                            if (xmlStr.substring(i, i + 4) === '<!--') {
+                                let endComment = xmlStr.indexOf('-->', i);
+                                if (endComment === -1) endComment = xmlStr.length;
+                                const comment = xmlStr.substring(i, endComment + 3);
+                                result += '<span class="xml-comment">' + escapeHtml(comment) + '</span>';
+                                i = endComment + 3;
+                                continue;
+                            }
+
+                            // Check for XML declaration
+                            if (xmlStr.substring(i, i + 2) === '<?') {
+                                let endDecl = xmlStr.indexOf('?>', i);
+                                if (endDecl === -1) endDecl = xmlStr.length;
+                                const decl = xmlStr.substring(i, endDecl + 2);
+                                result += '<span class="xml-declaration">' + escapeHtml(decl) + '</span>';
+                                i = endDecl + 2;
+                                continue;
+                            }
+
+                            // Check for tags
+                            if (xmlStr[i] === '<') {
+                                let j = i + 1;
+                                let isClosingTag = xmlStr[j] === '/';
+                                if (isClosingTag) j++;
+
+                                // Get tag name
+                                let tagName = '';
+                                while (j < xmlStr.length && /[a-zA-Z0-9_:\\-]/.test(xmlStr[j])) {
+                                    tagName += xmlStr[j];
+                                    j++;
+                                }
+
+                                result += '&lt;';
+                                if (isClosingTag) result += '/';
+                                result += '<span class="xml-tag">' + escapeHtml(tagName) + '</span>';
+
+                                // Parse attributes
+                                while (j < xmlStr.length && xmlStr[j] !== '>' && xmlStr[j] !== '/') {
+                                    if (/\\s/.test(xmlStr[j])) {
+                                        result += xmlStr[j];
+                                        j++;
+                                        continue;
+                                    }
+
+                                    // Get attribute name
+                                    let attrName = '';
+                                    while (j < xmlStr.length && /[a-zA-Z0-9_:\\-]/.test(xmlStr[j])) {
+                                        attrName += xmlStr[j];
+                                        j++;
+                                    }
+
+                                    if (attrName) {
+                                        result += '<span class="xml-attr-name">' + escapeHtml(attrName) + '</span>';
+                                    }
+
+                                    // Skip whitespace and =
+                                    while (j < xmlStr.length && (xmlStr[j] === '=' || /\\s/.test(xmlStr[j]))) {
+                                        result += xmlStr[j];
+                                        j++;
+                                    }
+
+                                    // Get attribute value
+                                    if (xmlStr[j] === '"' || xmlStr[j] === "'") {
+                                        const quote = xmlStr[j];
+                                        let attrValue = quote;
+                                        j++;
+                                        while (j < xmlStr.length && xmlStr[j] !== quote) {
+                                            attrValue += xmlStr[j];
+                                            j++;
+                                        }
+                                        if (j < xmlStr.length) {
+                                            attrValue += xmlStr[j];
+                                            j++;
+                                        }
+                                        result += '<span class="xml-attr-value">' + escapeHtml(attrValue) + '</span>';
+                                    }
+                                }
+
+                                // Handle self-closing or end of tag
+                                if (xmlStr[j] === '/') {
+                                    result += '/';
+                                    j++;
+                                }
+                                if (xmlStr[j] === '>') {
+                                    result += '&gt;';
+                                    j++;
+                                }
+
+                                i = j;
+                                continue;
+                            }
+
+                            // Regular content
+                            let content = '';
+                            while (i < xmlStr.length && xmlStr[i] !== '<') {
+                                content += xmlStr[i];
+                                i++;
+                            }
+                            if (content.trim()) {
+                                result += '<span class="xml-content">' + escapeHtml(content) + '</span>';
+                            } else {
+                                result += content;
+                            }
+                        }
+
+                        return result;
                     }
 
                     function selectTab(tabName) {

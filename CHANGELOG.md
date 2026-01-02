@@ -176,6 +176,36 @@ All notable changes to the "mqexplorer" extension will be documented in this fil
 ### 🔄 Breaking Changes
 None - All changes are backward compatible with existing connection profiles and configurations.
 
+## [0.5.2] - 2026-01-02
+
+### 🐛 Bug Fixes
+
+#### RabbitMQ Headers with JSON Values Now Render Properly (Issue #6)
+- **Fixed**: Message headers containing JSON objects/arrays (like `x-death`, `headers`) were displaying as `[object Object]`
+- **Solution**: Property values that are objects or arrays are now formatted as pretty-printed JSON with syntax highlighting
+- **Scrollable**: Large JSON values in headers are displayed in a scrollable container (max 200px height)
+- **Copyable**: JSON content is now selectable and copyable for inspection
+
+## [0.5.1] - 2026-01-02
+
+### ✨ New Features
+
+#### JSON & XML Syntax Highlighting in Message Viewer (Issue #5)
+- **JSON Highlighting**: Message payloads containing JSON are now displayed with full syntax highlighting
+  - Keys in light blue
+  - Strings in orange
+  - Numbers in light green
+  - Booleans and null in blue
+  - Brackets in gold
+- **XML Highlighting**: XML payloads also receive syntax highlighting
+  - Tag names in blue
+  - Attribute names in light blue
+  - Attribute values in orange
+  - Comments in green italic
+  - XML declarations in purple
+- **Theme Aware**: Colors automatically adapt to VS Code's light and dark themes using CSS variables
+- **Auto-Detection**: JSON/XML tabs automatically appear when valid content is detected
+
 ## [0.5.0] - 2026-01-01
 
 ### 🐛 Bug Fixes
