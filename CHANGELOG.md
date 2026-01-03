@@ -2,6 +2,16 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.7] - 2026-01-02
+
+### 🐛 Bug Fixes
+
+#### Queue Depth Not Updating After Message Delete (Issue #8)
+- **Fixed**: Deleting messages from a queue didn't update the queue depth count in the tree view
+- **Root Cause**: The `queueUpdated` event was emitted after message deletion but the tree view wasn't listening for it
+- **Solution**: Added event listener in extension activation to refresh tree view when queue is updated
+- **Result**: Queue depth in the entities list now updates immediately when messages are deleted, put, or queue is cleared
+
 ## [0.5.6] - 2026-01-02
 
 ### 🐛 Bug Fixes
