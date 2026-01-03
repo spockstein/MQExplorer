@@ -1085,14 +1085,26 @@ export class MessageBrowserWebview {
 
                         if (message.payload) {
                             try {
+                                // Strip BOM (Byte Order Mark) if present - BOM can appear at start of UTF-8/UTF-16 files
+                                // and will cause JSON.parse to fail
+                                let payloadToparse = message.payload;
+                                if (payloadToparse.charCodeAt(0) === 0xFEFF) {
+                                    payloadToparse = payloadToparse.substring(1);
+                                }
+                                // Also handle UTF-8 BOM which might appear as multiple characters
+                                if (payloadToparse.startsWith('\xEF\xBB\xBF')) {
+                                    payloadToparse = payloadToparse.substring(3);
+                                }
+
                                 // Try to parse as JSON
-                                const jsonObj = JSON.parse(message.payload);
+                                const jsonObj = JSON.parse(payloadToparse);
                                 // Format with indentation
                                 formattedJson = JSON.stringify(jsonObj, null, 2);
                                 isValidJson = true;
 
                                 // Apply syntax highlighting to JSON tab
-                                jsonPayload.innerHTML = highlightJson(formattedJson);
+                                // Wrap in a pre element to preserve whitespace and line breaks
+                                jsonPayload.innerHTML = '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-family: inherit;">' + highlightJson(formattedJson) + '</pre>';
                                 // Show the JSON tab if it's valid JSON
                                 document.querySelector('.tab[data-tab="json"]').style.display = 'block';
                             } catch (e) {
@@ -1109,7 +1121,8 @@ export class MessageBrowserWebview {
                         // Set text payload - format JSON if valid, otherwise show raw
                         if (isValidJson) {
                             // Show formatted JSON with syntax highlighting in Text tab too
-                            textPayload.innerHTML = highlightJson(formattedJson);
+                            // Wrap in a pre-like element to preserve whitespace and line breaks
+                            textPayload.innerHTML = '<pre style="margin: 0; white-space: pre-wrap; word-wrap: break-word; font-family: inherit;">' + highlightJson(formattedJson) + '</pre>';
                         } else {
                             textPayload.textContent = message.payload || '';
                         }

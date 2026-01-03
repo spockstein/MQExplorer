@@ -2,6 +2,26 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.6] - 2026-01-02
+
+### 🐛 Bug Fixes
+
+#### BOM (Byte Order Mark) Handling for JSON Payloads
+- **Fixed**: JSON payloads with BOM (Byte Order Mark) at the start were not being parsed as valid JSON
+- **Root Cause**: BOM character (`\uFEFF` or `\xEF\xBB\xBF`) at the beginning of UTF-8/UTF-16 encoded payloads causes `JSON.parse()` to fail
+- **Solution**: Strip BOM characters before attempting JSON parsing
+- **Result**: Messages with BOM-prefixed JSON payloads now display formatted correctly in Text and JSON tabs
+
+## [0.5.5] - 2026-01-02
+
+### 🐛 Bug Fixes
+
+#### Text Tab JSON Formatting Now Works (Issue #6 - Final Fix)
+- **Fixed**: Text tab was still showing unformatted JSON despite previous fixes
+- **Root Cause**: The `white-space: pre-wrap` CSS wasn't being honored when using `innerHTML` to set highlighted content
+- **Solution**: Wrapped highlighted JSON in a `<pre>` element to ensure newlines and indentation are preserved
+- **Result**: Text tab now correctly displays formatted, syntax-highlighted JSON with proper line breaks and indentation
+
 ## [0.5.4] - 2026-01-02
 
 ### ✨ New Features
