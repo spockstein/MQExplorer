@@ -159,11 +159,20 @@ export class AzureServiceBusProvider implements IMQProvider {
 
             // Get all queues from Azure Service Bus
             for await (const queueProperties of this.adminClient!.listQueues()) {
+                // Get runtime properties to get the actual message count
+                let activeMessageCount = 0;
+                try {
+                    const runtimeProps = await this.adminClient!.getQueueRuntimeProperties(queueProperties.name);
+                    activeMessageCount = runtimeProps.activeMessageCount || 0;
+                } catch (runtimeError) {
+                    this.log(`Warning: Could not get runtime properties for queue ${queueProperties.name}: ${(runtimeError as Error).message}`);
+                }
+
                 const queueInfo: QueueInfo = {
                     name: queueProperties.name,
-                    depth: 0, // Will be updated with actual count when needed
+                    depth: activeMessageCount,
                     type: 'Queue',
-                    description: queueProperties.userMetadata || `Azure Service Bus Queue: ${queueProperties.name}`
+                    description: queueProperties.userMetadata || `${activeMessageCount} messages`
                 };
 
                 queues.push(queueInfo);
@@ -195,12 +204,22 @@ export class AzureServiceBusProvider implements IMQProvider {
 
             // Get all topics from Azure Service Bus
             for await (const topicProperties of this.adminClient!.listTopics()) {
+                // Get runtime properties to get subscription count
+                let subscriptionCount = 0;
+                try {
+                    const runtimeProps = await this.adminClient!.getTopicRuntimeProperties(topicProperties.name);
+                    subscriptionCount = runtimeProps.subscriptionCount || 0;
+                } catch (runtimeError) {
+                    this.log(`Warning: Could not get runtime properties for topic ${topicProperties.name}: ${(runtimeError as Error).message}`);
+                }
+
                 const topicInfo: TopicInfo = {
                     name: topicProperties.name,
                     topicString: topicProperties.name,
                     type: 'Topic',
-                    description: topicProperties.userMetadata || `Azure Service Bus Topic: ${topicProperties.name}`,
-                    status: 'Active'
+                    description: topicProperties.userMetadata || `${subscriptionCount} subscriptions`,
+                    status: 'Active',
+                    subscriptionCount: subscriptionCount
                 };
 
                 topics.push(topicInfo);
@@ -232,11 +251,21 @@ export class AzureServiceBusProvider implements IMQProvider {
             const limit = options?.limit || 10;
             const startPosition = options?.startPosition || 0;
 
-            // Get a receiver for the queue
+            // First, get the current queue depth for diagnostics
+            try {
+                const runtimeProps = await this.adminClient!.getQueueRuntimeProperties(queueName);
+                this.log(`Queue ${queueName} runtime properties: activeMessageCount=${runtimeProps.activeMessageCount}, deadLetterMessageCount=${runtimeProps.deadLetterMessageCount}, scheduledMessageCount=${runtimeProps.scheduledMessageCount}`);
+            } catch (error) {
+                this.log(`Warning: Could not get queue runtime properties: ${(error as Error).message}`);
+            }
+
+            // Get a receiver for the queue - note: peekMessages() is non-destructive regardless of receiveMode
             const receiver = this.serviceBusClient!.createReceiver(queueName, { receiveMode: 'peekLock' });
 
-            // Peek messages from the queue
+            // Peek messages from the queue (non-destructive operation)
+            this.log(`Peeking up to ${limit} messages from queue: ${queueName}`);
             const sbMessages = await receiver.peekMessages(limit);
+            this.log(`Peeked ${sbMessages.length} messages from queue: ${queueName}`);
 
             // Convert to our Message format
             const messages: Message[] = sbMessages.map(sbMessage => {
@@ -256,19 +285,52 @@ export class AzureServiceBusProvider implements IMQProvider {
                     payload = '';
                 }
 
-                // Create message properties
+                // Calculate message size (approximate based on payload)
+                let messageSize: number | undefined;
+                if (typeof payload === 'string') {
+                    messageSize = Buffer.byteLength(payload, 'utf8');
+                } else if (Buffer.isBuffer(payload)) {
+                    messageSize = payload.length;
+                }
+
+                // Create message properties with all ASB system properties
                 const properties: MessageProperties = {
+                    // Content properties
                     contentType: sbMessage.contentType,
+                    subject: sbMessage.subject, // Also known as Label
+
+                    // Routing properties
+                    to: sbMessage.to,
                     replyTo: sbMessage.replyTo,
-                    timeToLive: sbMessage.timeToLive ? sbMessage.timeToLive.toString() : undefined,
-                    label: sbMessage.subject,
-                    deliveryCount: sbMessage.deliveryCount,
-                    sequenceNumber: sbMessage.sequenceNumber?.toString(),
-                    lockToken: sbMessage.lockToken,
-                    enqueuedTime: sbMessage.enqueuedTimeUtc,
-                    expiresAt: sbMessage.expiresAtUtc,
+                    replyToSessionId: sbMessage.replyToSessionId,
+
+                    // Session and partition properties
                     sessionId: sbMessage.sessionId,
                     partitionKey: sbMessage.partitionKey,
+
+                    // Timing properties
+                    timeToLive: sbMessage.timeToLive ? `${sbMessage.timeToLive} ms` : undefined,
+                    enqueuedTime: sbMessage.enqueuedTimeUtc,
+                    expiresAt: sbMessage.expiresAtUtc,
+                    scheduledEnqueueTime: sbMessage.scheduledEnqueueTimeUtc,
+
+                    // Delivery properties
+                    deliveryCount: sbMessage.deliveryCount,
+                    sequenceNumber: sbMessage.sequenceNumber?.toString(),
+                    enqueuedSequenceNumber: sbMessage.enqueuedSequenceNumber?.toString(),
+                    lockToken: sbMessage.lockToken,
+                    lockedUntil: sbMessage.lockedUntilUtc,
+
+                    // State properties
+                    state: sbMessage.state,
+                    deadLetterSource: sbMessage.deadLetterSource,
+                    deadLetterReason: sbMessage.deadLetterReason,
+                    deadLetterErrorDescription: sbMessage.deadLetterErrorDescription,
+
+                    // Size
+                    messageSize: messageSize ? `${messageSize} bytes` : undefined,
+
+                    // Application properties (custom user properties)
                     applicationProperties: sbMessage.applicationProperties
                 };
 
@@ -323,21 +385,34 @@ export class AzureServiceBusProvider implements IMQProvider {
                 this.senders.set(queueName, sender);
             }
 
-            // Create the message
+            // Create the message with full ASB system properties support
             const message: ServiceBusMessage = {
                 body: payload,
-                contentType: properties?.contentType,
-                correlationId: properties?.correlationId,
-                subject: properties?.label,
                 messageId: properties?.messageId || uuidv4(),
+
+                // Content properties
+                contentType: properties?.contentType,
+                subject: properties?.subject || properties?.label, // Support both 'subject' and legacy 'label'
+
+                // Routing properties
+                to: properties?.to,
                 replyTo: properties?.replyTo,
-                partitionKey: properties?.partitionKey,
+                replyToSessionId: properties?.replyToSessionId,
+                correlationId: properties?.correlationId,
+
+                // Session and partition properties
                 sessionId: properties?.sessionId,
+                partitionKey: properties?.partitionKey,
+
+                // Timing properties
                 timeToLive: properties?.timeToLive ? parseInt(properties.timeToLive) : undefined,
+                scheduledEnqueueTimeUtc: properties?.scheduledEnqueueTime ? new Date(properties.scheduledEnqueueTime) : undefined,
+
+                // Application properties (custom user properties)
                 applicationProperties: properties?.applicationProperties || {}
             };
 
-            // Add custom properties if provided
+            // Add custom properties if provided via headers
             if (properties?.headers) {
                 for (const [key, value] of Object.entries(properties.headers)) {
                     if (message.applicationProperties) {
@@ -349,7 +424,15 @@ export class AzureServiceBusProvider implements IMQProvider {
             // Send the message
             await sender.sendMessages(message);
 
-            this.log(`Successfully put message to queue: ${queueName}`);
+            this.log(`Successfully put message to queue: ${queueName} with messageId: ${message.messageId}`);
+
+            // Verify the message was sent by checking queue depth
+            try {
+                const runtimeProps = await this.adminClient!.getQueueRuntimeProperties(queueName);
+                this.log(`Queue ${queueName} after put: activeMessageCount=${runtimeProps.activeMessageCount}`);
+            } catch (error) {
+                this.log(`Warning: Could not verify queue depth after put: ${(error as Error).message}`);
+            }
         } catch (error) {
             this.log(`Error putting message: ${(error as Error).message}`, true);
             throw error;
@@ -374,21 +457,34 @@ export class AzureServiceBusProvider implements IMQProvider {
                 this.senders.set(topicName, sender);
             }
 
-            // Create the message
+            // Create the message with full ASB system properties support
             const message: ServiceBusMessage = {
                 body: payload,
-                contentType: properties?.contentType,
-                correlationId: properties?.correlationId,
-                subject: properties?.label,
                 messageId: properties?.messageId || uuidv4(),
+
+                // Content properties
+                contentType: properties?.contentType,
+                subject: properties?.subject || properties?.label, // Support both 'subject' and legacy 'label'
+
+                // Routing properties
+                to: properties?.to,
                 replyTo: properties?.replyTo,
-                partitionKey: properties?.partitionKey,
+                replyToSessionId: properties?.replyToSessionId,
+                correlationId: properties?.correlationId,
+
+                // Session and partition properties
                 sessionId: properties?.sessionId,
+                partitionKey: properties?.partitionKey,
+
+                // Timing properties
                 timeToLive: properties?.timeToLive ? parseInt(properties.timeToLive) : undefined,
+                scheduledEnqueueTimeUtc: properties?.scheduledEnqueueTime ? new Date(properties.scheduledEnqueueTime) : undefined,
+
+                // Application properties (custom user properties)
                 applicationProperties: properties?.applicationProperties || {}
             };
 
-            // Add custom properties if provided
+            // Add custom properties if provided via headers
             if (properties?.headers) {
                 for (const [key, value] of Object.entries(properties.headers)) {
                     if (message.applicationProperties) {
@@ -403,6 +499,206 @@ export class AzureServiceBusProvider implements IMQProvider {
             this.log(`Successfully published message to topic: ${topicName}`);
         } catch (error) {
             this.log(`Error publishing message: ${(error as Error).message}`, true);
+            throw error;
+        }
+    }
+
+    /**
+     * List subscriptions for a topic
+     * @param topicName Name of the topic
+     */
+    public async listSubscriptions(topicName: string): Promise<import('./IMQProvider').SubscriptionInfo[]> {
+        try {
+            this.checkConnection();
+            this.log(`Listing subscriptions for topic: ${topicName}`);
+
+            const subscriptions: import('./IMQProvider').SubscriptionInfo[] = [];
+
+            // Get all subscriptions for the topic
+            for await (const subProperties of this.adminClient!.listSubscriptions(topicName)) {
+                // Get runtime properties to get message count
+                let messageCount = 0;
+                let deadLetterMessageCount = 0;
+                try {
+                    const runtimeProps = await this.adminClient!.getSubscriptionRuntimeProperties(topicName, subProperties.subscriptionName);
+                    messageCount = runtimeProps.activeMessageCount || 0;
+                    deadLetterMessageCount = runtimeProps.deadLetterMessageCount || 0;
+                } catch (runtimeError) {
+                    this.log(`Warning: Could not get runtime properties for subscription ${subProperties.subscriptionName}: ${(runtimeError as Error).message}`);
+                }
+
+                // Get subscription rules
+                const rules: import('./IMQProvider').SubscriptionRule[] = [];
+                try {
+                    for await (const rule of this.adminClient!.listRules(topicName, subProperties.subscriptionName)) {
+                        let filterType: 'sql' | 'correlation' | 'true' = 'true';
+                        let filter: string | undefined;
+
+                        if (rule.filter) {
+                            if ('sqlExpression' in rule.filter && rule.filter.sqlExpression) {
+                                filterType = 'sql';
+                                filter = rule.filter.sqlExpression;
+                            } else if ('correlationId' in rule.filter) {
+                                filterType = 'correlation';
+                                const corrFilter = rule.filter as any;
+                                const filterParts: string[] = [];
+                                if (corrFilter.correlationId) filterParts.push(`correlationId=${corrFilter.correlationId}`);
+                                if (corrFilter.messageId) filterParts.push(`messageId=${corrFilter.messageId}`);
+                                if (corrFilter.to) filterParts.push(`to=${corrFilter.to}`);
+                                if (corrFilter.replyTo) filterParts.push(`replyTo=${corrFilter.replyTo}`);
+                                if (corrFilter.subject) filterParts.push(`subject=${corrFilter.subject}`);
+                                if (corrFilter.sessionId) filterParts.push(`sessionId=${corrFilter.sessionId}`);
+                                if (corrFilter.contentType) filterParts.push(`contentType=${corrFilter.contentType}`);
+                                if (corrFilter.applicationProperties) {
+                                    for (const [key, value] of Object.entries(corrFilter.applicationProperties)) {
+                                        filterParts.push(`${key}=${value}`);
+                                    }
+                                }
+                                filter = filterParts.join(', ') || 'correlation filter';
+                            }
+                        }
+
+                        let action: string | undefined;
+                        if (rule.action && 'sqlExpression' in rule.action) {
+                            action = rule.action.sqlExpression;
+                        }
+
+                        rules.push({
+                            name: rule.name,
+                            filterType,
+                            filter,
+                            action
+                        });
+                    }
+                } catch (rulesError) {
+                    this.log(`Warning: Could not get rules for subscription ${subProperties.subscriptionName}: ${(rulesError as Error).message}`);
+                }
+
+                subscriptions.push({
+                    name: subProperties.subscriptionName,
+                    topicName: topicName,
+                    messageCount,
+                    deadLetterMessageCount,
+                    status: subProperties.status || 'Active',
+                    description: subProperties.userMetadata || `${messageCount} messages`,
+                    rules
+                });
+            }
+
+            this.log(`Found ${subscriptions.length} subscriptions for topic: ${topicName}`);
+            return subscriptions;
+        } catch (error) {
+            this.log(`Error listing subscriptions: ${(error as Error).message}`, true);
+            throw error;
+        }
+    }
+
+    /**
+     * Browse messages in a subscription (non-destructive peek)
+     * @param topicName Name of the topic
+     * @param subscriptionName Name of the subscription
+     * @param options Options for browsing
+     */
+    public async browseSubscriptionMessages(topicName: string, subscriptionName: string, options?: BrowseOptions): Promise<Message[]> {
+        try {
+            this.checkConnection();
+            this.log(`Browsing messages in subscription: ${topicName}/${subscriptionName}`);
+
+            const limit = options?.limit || 10;
+
+            // Get a receiver for the subscription
+            const receiver = this.serviceBusClient!.createReceiver(topicName, subscriptionName, { receiveMode: 'peekLock' });
+
+            // Peek messages from the subscription
+            const sbMessages = await receiver.peekMessages(limit);
+
+            // Convert to our Message format (reusing the same logic as browseMessages)
+            const messages: Message[] = sbMessages.map(sbMessage => {
+                const messageId = sbMessage.messageId || uuidv4();
+                const correlationId = sbMessage.correlationId;
+                const timestamp = sbMessage.enqueuedTimeUtc;
+
+                // Get payload
+                let payload: string | Buffer;
+                if (typeof sbMessage.body === 'string') {
+                    payload = sbMessage.body;
+                } else if (Buffer.isBuffer(sbMessage.body)) {
+                    payload = sbMessage.body;
+                } else if (sbMessage.body !== undefined && sbMessage.body !== null) {
+                    payload = JSON.stringify(sbMessage.body);
+                } else {
+                    payload = '';
+                }
+
+                // Calculate message size
+                let messageSize: number | undefined;
+                if (typeof payload === 'string') {
+                    messageSize = Buffer.byteLength(payload, 'utf8');
+                } else if (Buffer.isBuffer(payload)) {
+                    messageSize = payload.length;
+                }
+
+                // Create message properties with all ASB system properties
+                const properties: MessageProperties = {
+                    // Content properties
+                    contentType: sbMessage.contentType,
+                    subject: sbMessage.subject,
+
+                    // Routing properties
+                    to: sbMessage.to,
+                    replyTo: sbMessage.replyTo,
+                    replyToSessionId: sbMessage.replyToSessionId,
+
+                    // Session and partition properties
+                    sessionId: sbMessage.sessionId,
+                    partitionKey: sbMessage.partitionKey,
+
+                    // Timing properties
+                    timeToLive: sbMessage.timeToLive ? `${sbMessage.timeToLive} ms` : undefined,
+                    enqueuedTime: sbMessage.enqueuedTimeUtc,
+                    expiresAt: sbMessage.expiresAtUtc,
+                    scheduledEnqueueTime: sbMessage.scheduledEnqueueTimeUtc,
+
+                    // Delivery properties
+                    deliveryCount: sbMessage.deliveryCount,
+                    sequenceNumber: sbMessage.sequenceNumber?.toString(),
+                    enqueuedSequenceNumber: sbMessage.enqueuedSequenceNumber?.toString(),
+                    lockToken: sbMessage.lockToken,
+                    lockedUntil: sbMessage.lockedUntilUtc,
+
+                    // State properties
+                    state: sbMessage.state,
+                    deadLetterSource: sbMessage.deadLetterSource,
+                    deadLetterReason: sbMessage.deadLetterReason,
+                    deadLetterErrorDescription: sbMessage.deadLetterErrorDescription,
+
+                    // Size
+                    messageSize: messageSize ? `${messageSize} bytes` : undefined,
+
+                    // Subscription info
+                    topicName: topicName,
+                    subscriptionName: subscriptionName,
+
+                    // Application properties
+                    applicationProperties: sbMessage.applicationProperties
+                };
+
+                return {
+                    id: messageId,
+                    correlationId: correlationId ? String(correlationId) : undefined,
+                    timestamp,
+                    payload,
+                    properties
+                };
+            });
+
+            // Close the receiver
+            await receiver.close();
+
+            this.log(`Retrieved ${messages.length} messages from subscription: ${topicName}/${subscriptionName}`);
+            return messages;
+        } catch (error) {
+            this.log(`Error browsing subscription messages: ${(error as Error).message}`, true);
             throw error;
         }
     }
@@ -460,57 +756,57 @@ export class AzureServiceBusProvider implements IMQProvider {
 
             const message = queueCache.get(messageId)!;
 
-            // If we have a lock token, we can complete the message
-            if (message.properties.lockToken) {
-                // Get a receiver for the queue
-                const receiver = this.serviceBusClient!.createReceiver(queueName, { receiveMode: 'peekLock' });
+            // Get the sequence number from our cached message - this is the reliable identifier in ASB
+            const sequenceNumber = message.properties.sequenceNumber;
+            if (!sequenceNumber) {
+                throw new Error(`Message ${messageId} does not have a sequence number - cannot delete`);
+            }
 
-                // We can't directly complete a peeked message, so we need to receive and complete it
-                const receivedMessages = await receiver.receiveMessages(1, { maxWaitTimeInMs: 5000 });
+            this.log(`Using sequence number ${sequenceNumber} to delete message`);
 
-                for (const receivedMessage of receivedMessages) {
-                    if (receivedMessage.messageId === messageId) {
-                        await receiver.completeMessage(receivedMessage);
+            // Get a receiver for the queue
+            const receiver = this.serviceBusClient!.createReceiver(queueName, { receiveMode: 'peekLock' });
+
+            try {
+                // Receive a single message and check if it's the one we want
+                // We'll receive messages one at a time and abandon those that don't match
+                let found = false;
+                let attempts = 0;
+                const maxAttempts = 100; // Safety limit to prevent infinite loops
+
+                while (!found && attempts < maxAttempts) {
+                    attempts++;
+
+                    // Receive one message at a time
+                    const receivedMessages = await receiver.receiveMessages(1, { maxWaitTimeInMs: 2000 });
+
+                    if (receivedMessages.length === 0) {
+                        // No more messages in the queue
+                        this.log(`No more messages available, message ${messageId} not found after ${attempts} attempts`, true);
                         break;
                     }
-                }
 
-                // Close the receiver
-                await receiver.close();
+                    const receivedMessage = receivedMessages[0];
 
-                this.log(`Successfully deleted message ${messageId} from queue: ${queueName}`);
-            } else {
-                // If we don't have a lock token, we can't delete the message directly
-                // We'll need to receive messages until we find the one we want to delete
-                this.log(`No lock token available for message ${messageId}, attempting to receive and delete`);
-
-                // Get a receiver for the queue
-                const receiver = this.serviceBusClient!.createReceiver(queueName, { receiveMode: 'peekLock' });
-
-                // Receive messages until we find the one we want to delete
-                let found = false;
-                let batch;
-
-                do {
-                    batch = await receiver.receiveMessages(10, { maxWaitTimeInMs: 5000 });
-
-                    for (const sbMessage of batch) {
-                        if (sbMessage.messageId === messageId) {
-                            await receiver.completeMessage(sbMessage);
-                            found = true;
-                            break;
-                        }
+                    // Check if this is the message we're looking for using sequence number
+                    if (receivedMessage.sequenceNumber?.toString() === sequenceNumber) {
+                        // This is the message we want to delete
+                        await receiver.completeMessage(receivedMessage);
+                        found = true;
+                        this.log(`Successfully deleted message ${messageId} (sequence: ${sequenceNumber}) from queue: ${queueName}`);
+                    } else {
+                        // Not the message we're looking for - abandon it so it goes back to the queue
+                        await receiver.abandonMessage(receivedMessage);
+                        this.log(`Abandoned message with sequence ${receivedMessage.sequenceNumber}, looking for ${sequenceNumber}`);
                     }
-                } while (batch.length > 0 && !found);
-
-                // Close the receiver
-                await receiver.close();
-
-                if (found) {
-                    this.log(`Successfully deleted message ${messageId} from queue: ${queueName}`);
-                } else {
-                    this.log(`Message ${messageId} not found in queue: ${queueName}`, true);
                 }
+
+                if (!found) {
+                    throw new Error(`Message ${messageId} (sequence: ${sequenceNumber}) not found in queue after ${attempts} attempts`);
+                }
+            } finally {
+                // Always close the receiver
+                await receiver.close();
             }
 
             // Remove the message from our cache
@@ -594,9 +890,12 @@ export class AzureServiceBusProvider implements IMQProvider {
      */
     public async getQueueDepth(queueName: string): Promise<number> {
         try {
-            // Azure Service Bus doesn't provide a direct way to get message count
-            // We'll return 0 as a placeholder
-            return 0;
+            this.checkConnection();
+            this.log(`Getting queue depth for: ${queueName}`);
+
+            // Use getQueueRuntimeProperties to get the actual message count
+            const runtimeProps = await this.adminClient!.getQueueRuntimeProperties(queueName);
+            return runtimeProps.activeMessageCount || 0;
         } catch (error) {
             this.log(`Error getting queue depth: ${(error as Error).message}`, true);
             throw error;

@@ -107,6 +107,22 @@ export interface IMQProvider {
     getTopicProperties?(topicName: string): Promise<TopicProperties>;
 
     /**
+     * List subscriptions for a topic (ASB specific)
+     * @param topicName Name of the topic
+     * @returns Promise that resolves with an array of subscription information
+     */
+    listSubscriptions?(topicName: string): Promise<SubscriptionInfo[]>;
+
+    /**
+     * Browse messages in a subscription (ASB specific)
+     * @param topicName Name of the topic
+     * @param subscriptionName Name of the subscription
+     * @param options Options for browsing
+     * @returns Promise that resolves with an array of messages
+     */
+    browseSubscriptionMessages?(topicName: string, subscriptionName: string, options?: BrowseOptions): Promise<Message[]>;
+
+    /**
      * List channels in the connected system
      * @param filter Optional filter to limit returned channels
      * @returns Promise that resolves with an array of channel information
@@ -154,6 +170,30 @@ export interface TopicInfo {
     type?: string;
     description?: string;
     status?: string;
+    subscriptionCount?: number;
+}
+
+/**
+ * Information about a subscription (for ASB topics)
+ */
+export interface SubscriptionInfo {
+    name: string;
+    topicName: string;
+    messageCount?: number;
+    deadLetterMessageCount?: number;
+    status?: string;
+    description?: string;
+    rules?: SubscriptionRule[];
+}
+
+/**
+ * Information about a subscription rule/filter
+ */
+export interface SubscriptionRule {
+    name: string;
+    filterType: 'sql' | 'correlation' | 'true';
+    filter?: string;
+    action?: string;
 }
 
 /**

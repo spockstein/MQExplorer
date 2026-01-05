@@ -2,6 +2,91 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.13] - 2026-01-04
+
+### 🔍 Diagnostics & Debugging
+
+#### ASB Message Browsing Diagnostics (Issue #15 Investigation)
+- **Enhanced Logging**: Added detailed diagnostic logging for ASB message operations
+- **Queue Runtime Properties**: Browse operations now log activeMessageCount, deadLetterMessageCount, and scheduledMessageCount before peeking
+- **Put Message Verification**: After sending a message, the queue depth is logged to verify the message was enqueued
+- **Peek Count Logging**: Each peek operation logs the number of messages retrieved
+- **Output Channel**: All logs are written to "MQExplorer: Azure Service Bus Provider" output channel for troubleshooting
+
+> **Note**: If messages disappear after refresh, check the output channel for diagnostic info and verify no external consumers are processing the queue.
+
+## [0.5.12] - 2026-01-04
+
+### 🐛 Critical Bug Fixes
+
+#### ASB Delete Single Message Purging Queue (Issue #14)
+- **Critical Fix**: Fixed bug where deleting a single ASB message could purge the entire queue
+- **Root Cause**: The delete logic was using `messageId` for matching, but `messageId` in ASB is user-assigned and may not be unique. Messages that didn't match were not being abandoned, leaving them locked.
+- **Solution**: Now uses `sequenceNumber` (unique in ASB) to identify messages for deletion
+- **New Behavior**: Messages that don't match the target are explicitly abandoned so they return to the queue
+- **Safety Limit**: Added a maximum attempt limit (100) to prevent infinite loops
+- **Better Logging**: Added detailed logging for delete operations including sequence number tracking
+
+## [0.5.11] - 2026-01-04
+
+### 🎨 UI Improvements
+
+#### ASB Application Properties Display (Issue #13)
+- **Improved**: Application Properties are now displayed as a sub-table instead of a JSON object
+- **Better Readability**: Each property/value pair is shown as its own row with "Header" and "Value" columns
+- **Example**: Properties like `DiagnosticId` and `Endpoint` are now displayed in a clean tabular format
+
+## [0.5.10] - 2026-01-04
+
+### 🎨 UI Improvements
+
+#### Hide Unsupported Channels Folder (Issue #12)
+- **Improved**: Removed the "Channels" folder from the tree view for providers that don't support channels
+- **Affected Providers**: Azure Service Bus and AWS SQS no longer show "Channels not supported" message
+- **Cleaner UI**: Users only see folders relevant to their messaging provider
+
+## [0.5.9] - 2026-01-04
+
+### ✨ New Features
+
+#### Azure Service Bus - Topics & Subscriptions Usability (Issue #11)
+- **Subscription Browsing**: Topics now show their subscriptions in the tree view
+- **Subscription Message Browsing**: Click the eye icon on a subscription to browse its messages
+- **Subscription Rules/Filters Display**: Message browser shows subscription filter rules (SQL, Correlation, True filters)
+- **Full Properties in Publish UI**: Publishing to ASB topics now uses a rich webview UI with all system properties:
+  - Content properties: Content Type, Subject (Label)
+  - Routing: To, Reply To, Correlation ID
+  - Session/Partition: Session ID, Partition Key
+  - Timing: Time to Live, Scheduled Enqueue Time
+  - Application Properties (custom headers as JSON)
+
+#### Azure Service Bus - System Properties Display (Issue #10)
+- **Enhanced Message Properties**: Message browser now shows comprehensive ASB system properties:
+  - Content Type, Subject, To, Reply To, Reply To Session ID
+  - Session ID, Partition Key
+  - Time to Live, Enqueued Time, Expires At, Scheduled Enqueue Time
+  - Delivery Count, Sequence Number, Enqueued Sequence Number
+  - Lock Token, Locked Until
+  - State, Dead Letter Source/Reason/Error Description
+  - Message Size
+
+### 🐛 Bug Fixes
+
+#### ASB Tree View Queue Depth (Issue #9)
+- **Fixed**: Tree view was showing "Depth: 0" for all ASB queues even when messages existed
+- **Root Cause**: The `getQueueDepth()` method was returning hardcoded 0
+- **Solution**: Now uses `getQueueRuntimeProperties()` to fetch actual `activeMessageCount`
+- **Result**: Queue depth in tree view accurately reflects actual message count
+
+## [0.5.8] - 2026-01-04
+
+### 🐛 Bug Fixes
+
+#### Queue Depth Not Updating After Message Delete (Issue #8) - Improved Fix
+- **Fixed**: v0.5.7 event-based fix didn't reliably update tree view
+- **Solution**: Added direct `refreshTreeView` command call after message delete operations
+- **Result**: Queue depth in the entities list now reliably updates when messages are deleted
+
 ## [0.5.7] - 2026-01-02
 
 ### 🐛 Bug Fixes

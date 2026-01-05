@@ -11,6 +11,10 @@ export class MessagePutWebview {
     private connectionManager: ConnectionManager;
     private profileId: string;
     private queueName: string;
+    private providerType: string = '';
+    // For topic publishing
+    private isTopicPublish: boolean = false;
+    private topicName: string = '';
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -20,11 +24,26 @@ export class MessagePutWebview {
     }
 
     /**
+     * Get the provider type for the profile
+     */
+    private async getProviderType(): Promise<string> {
+        try {
+            const profiles = await this.connectionManager.getConnectionProfiles();
+            const profile = profiles.find(p => p.id === this.profileId);
+            return profile?.providerType || '';
+        } catch {
+            return '';
+        }
+    }
+
+    /**
      * Show the message put webview
      */
-    public show(profileId: string, queueName: string): void {
+    public async show(profileId: string, queueName: string): Promise<void> {
         this.profileId = profileId;
         this.queueName = queueName;
+        this.isTopicPublish = false;
+        this.providerType = await this.getProviderType();
 
         // If panel already exists, reveal it
         if (this.panel) {
@@ -86,7 +105,12 @@ export class MessagePutWebview {
             return;
         }
 
-        this.panel.webview.html = this.getWebviewContent();
+        // Use provider-specific content
+        if (this.providerType === 'azureservicebus') {
+            this.panel.webview.html = this.getASBWebviewContent();
+        } else {
+            this.panel.webview.html = this.getWebviewContent();
+        }
     }
 
     /**
@@ -663,6 +687,396 @@ export class MessagePutWebview {
             }
         } catch (error) {
             vscode.window.showErrorMessage(`Error loading file: ${(error as Error).message}`);
+        }
+    }
+
+    /**
+     * Get the HTML content for Azure Service Bus webview
+     */
+    private getASBWebviewContent(): string {
+        const targetLabel = this.isTopicPublish ? `Topic: ${this.topicName}` : `Queue: ${this.queueName}`;
+        const title = this.isTopicPublish ? 'Publish Message' : 'Put Message';
+
+        return `<!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>${title}: ${this.queueName}</title>
+            <style>
+                body {
+                    font-family: var(--vscode-font-family);
+                    padding: 20px;
+                    color: var(--vscode-foreground);
+                }
+                .form-group {
+                    margin-bottom: 15px;
+                }
+                label {
+                    display: block;
+                    margin-bottom: 5px;
+                    font-weight: bold;
+                }
+                input, select, textarea {
+                    width: 100%;
+                    padding: 8px;
+                    box-sizing: border-box;
+                    background-color: var(--vscode-input-background);
+                    color: var(--vscode-input-foreground);
+                    border: 1px solid var(--vscode-input-border);
+                }
+                textarea {
+                    min-height: 150px;
+                    font-family: monospace;
+                }
+                button {
+                    padding: 8px 16px;
+                    margin-right: 10px;
+                    background-color: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    border: none;
+                    cursor: pointer;
+                }
+                button:hover {
+                    background-color: var(--vscode-button-hoverBackground);
+                }
+                .actions {
+                    margin-top: 20px;
+                    display: flex;
+                }
+                .properties {
+                    margin-top: 20px;
+                    border-top: 1px solid var(--vscode-input-border);
+                    padding-top: 20px;
+                }
+                h2 {
+                    margin-top: 0;
+                    margin-bottom: 15px;
+                }
+                .toggle-properties {
+                    margin-top: 10px;
+                    cursor: pointer;
+                    color: var(--vscode-textLink-foreground);
+                    text-decoration: underline;
+                }
+                .hint {
+                    display: block;
+                    font-size: 0.8em;
+                    color: var(--vscode-descriptionForeground);
+                    margin-top: 4px;
+                }
+                .section {
+                    margin-bottom: 20px;
+                    padding: 15px;
+                    border: 1px solid var(--vscode-panel-border);
+                    border-radius: 4px;
+                }
+                .section h3 {
+                    margin-top: 0;
+                    margin-bottom: 15px;
+                    font-size: 1em;
+                    color: var(--vscode-textLink-foreground);
+                }
+                .two-col {
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 15px;
+                }
+            </style>
+        </head>
+        <body>
+            <h1>${title} to ${targetLabel}</h1>
+
+            <div class="form-group">
+                <label for="payload">Message Payload</label>
+                <textarea id="payload" placeholder="Enter message payload (JSON, XML, or plain text)"></textarea>
+            </div>
+
+            <div class="form-group">
+                <button id="loadFromFileBtn">Load From File</button>
+            </div>
+
+            <div class="toggle-properties" id="toggleProperties">Show Message Properties</div>
+
+            <div class="properties" id="propertiesSection" style="display: none;">
+                <h2>Azure Service Bus Message Properties</h2>
+
+                <div class="section">
+                    <h3>Content Properties</h3>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label for="contentType">Content Type</label>
+                            <select id="contentType">
+                                <option value="">Default</option>
+                                <option value="application/json">application/json</option>
+                                <option value="application/xml">application/xml</option>
+                                <option value="text/plain">text/plain</option>
+                                <option value="application/octet-stream">application/octet-stream</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="subject">Subject (Label)</label>
+                            <input type="text" id="subject" placeholder="Message subject/label">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Routing Properties</h3>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label for="to">To</label>
+                            <input type="text" id="to" placeholder="Destination address">
+                        </div>
+                        <div class="form-group">
+                            <label for="replyTo">Reply To</label>
+                            <input type="text" id="replyTo" placeholder="Reply address">
+                        </div>
+                        <div class="form-group">
+                            <label for="correlationId">Correlation ID</label>
+                            <input type="text" id="correlationId" placeholder="Correlation identifier">
+                        </div>
+                        <div class="form-group">
+                            <label for="replyToSessionId">Reply To Session ID</label>
+                            <input type="text" id="replyToSessionId" placeholder="Reply session ID">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Session & Partition Properties</h3>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label for="sessionId">Session ID</label>
+                            <input type="text" id="sessionId" placeholder="Session identifier">
+                            <span class="hint">Required for session-enabled queues</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="partitionKey">Partition Key</label>
+                            <input type="text" id="partitionKey" placeholder="Partition key">
+                            <span class="hint">For partitioned entities</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Timing Properties</h3>
+                    <div class="two-col">
+                        <div class="form-group">
+                            <label for="timeToLive">Time To Live (ms)</label>
+                            <input type="number" id="timeToLive" placeholder="e.g., 60000 for 1 minute">
+                            <span class="hint">Leave empty for default TTL</span>
+                        </div>
+                        <div class="form-group">
+                            <label for="scheduledEnqueueTime">Scheduled Enqueue Time</label>
+                            <input type="datetime-local" id="scheduledEnqueueTime">
+                            <span class="hint">Schedule message for future delivery</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="section">
+                    <h3>Application Properties (Custom Headers)</h3>
+                    <div class="form-group">
+                        <label for="applicationProperties">Application Properties (JSON)</label>
+                        <textarea id="applicationProperties" style="min-height: 80px;" placeholder='{"key1": "value1", "key2": "value2"}'></textarea>
+                        <span class="hint">Enter custom properties as JSON object</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="putBtn">${title}</button>
+                <button id="cancelBtn">Cancel</button>
+            </div>
+
+            <script>
+                (function() {
+                    const vscode = acquireVsCodeApi();
+
+                    // Handle put button
+                    document.getElementById('putBtn').addEventListener('click', () => {
+                        const payload = document.getElementById('payload').value;
+                        const properties = {};
+
+                        // Content properties
+                        const contentType = document.getElementById('contentType').value;
+                        if (contentType) properties.contentType = contentType;
+
+                        const subject = document.getElementById('subject').value;
+                        if (subject) properties.subject = subject;
+
+                        // Routing properties
+                        const to = document.getElementById('to').value;
+                        if (to) properties.to = to;
+
+                        const replyTo = document.getElementById('replyTo').value;
+                        if (replyTo) properties.replyTo = replyTo;
+
+                        const correlationId = document.getElementById('correlationId').value;
+                        if (correlationId) properties.correlationId = correlationId;
+
+                        const replyToSessionId = document.getElementById('replyToSessionId').value;
+                        if (replyToSessionId) properties.replyToSessionId = replyToSessionId;
+
+                        // Session & Partition properties
+                        const sessionId = document.getElementById('sessionId').value;
+                        if (sessionId) properties.sessionId = sessionId;
+
+                        const partitionKey = document.getElementById('partitionKey').value;
+                        if (partitionKey) properties.partitionKey = partitionKey;
+
+                        // Timing properties
+                        const timeToLive = document.getElementById('timeToLive').value;
+                        if (timeToLive) properties.timeToLive = timeToLive;
+
+                        const scheduledEnqueueTime = document.getElementById('scheduledEnqueueTime').value;
+                        if (scheduledEnqueueTime) properties.scheduledEnqueueTime = scheduledEnqueueTime;
+
+                        // Application properties
+                        const applicationPropertiesStr = document.getElementById('applicationProperties').value;
+                        if (applicationPropertiesStr) {
+                            try {
+                                properties.applicationProperties = JSON.parse(applicationPropertiesStr);
+                            } catch (e) {
+                                vscode.postMessage({
+                                    command: 'showError',
+                                    message: 'Invalid Application Properties JSON: ' + e.message
+                                });
+                                return;
+                            }
+                        }
+
+                        vscode.postMessage({
+                            command: 'putMessage',
+                            payload,
+                            properties
+                        });
+                    });
+
+                    // Handle load from file button
+                    document.getElementById('loadFromFileBtn').addEventListener('click', () => {
+                        vscode.postMessage({ command: 'loadFromFile' });
+                    });
+
+                    // Handle cancel button
+                    document.getElementById('cancelBtn').addEventListener('click', () => {
+                        vscode.postMessage({ command: 'cancel' });
+                    });
+
+                    // Handle toggle properties
+                    document.getElementById('toggleProperties').addEventListener('click', () => {
+                        const propertiesSection = document.getElementById('propertiesSection');
+                        const toggleButton = document.getElementById('toggleProperties');
+
+                        if (propertiesSection.style.display === 'none') {
+                            propertiesSection.style.display = 'block';
+                            toggleButton.textContent = 'Hide Message Properties';
+                        } else {
+                            propertiesSection.style.display = 'none';
+                            toggleButton.textContent = 'Show Message Properties';
+                        }
+                    });
+
+                    // Handle messages from extension
+                    window.addEventListener('message', event => {
+                        const message = event.data;
+                        if (message.command === 'setPayload') {
+                            document.getElementById('payload').value = message.payload;
+                        }
+                    });
+                })();
+            </script>
+        </body>
+        </html>`;
+    }
+
+    /**
+     * Show the message publish webview for a topic (ASB)
+     */
+    public async showTopicPublish(profileId: string, topicName: string): Promise<void> {
+        this.profileId = profileId;
+        this.queueName = topicName;
+        this.topicName = topicName;
+        this.isTopicPublish = true;
+        this.providerType = await this.getProviderType();
+
+        // If panel already exists, reveal it
+        if (this.panel) {
+            this.panel.reveal();
+            return;
+        }
+
+        // Create a new panel
+        this.panel = vscode.window.createWebviewPanel(
+            'mqexplorerMessagePut',
+            `Publish Message: ${topicName}`,
+            vscode.ViewColumn.One,
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true
+            }
+        );
+
+        // Set content
+        this.updateWebviewContent();
+
+        // Handle messages from the webview
+        this.panel.webview.onDidReceiveMessage(
+            async (message) => {
+                switch (message.command) {
+                    case 'putMessage':
+                        await this.publishToTopic(message.payload, message.properties);
+                        break;
+                    case 'loadFromFile':
+                        await this.loadFromFile();
+                        break;
+                    case 'cancel':
+                        this.panel?.dispose();
+                        break;
+                    case 'showError':
+                        vscode.window.showErrorMessage(message.message);
+                        break;
+                }
+            },
+            undefined,
+            this.context.subscriptions
+        );
+
+        // Handle panel disposal
+        this.panel.onDidDispose(
+            () => {
+                this.panel = undefined;
+                this.isTopicPublish = false;
+            },
+            null,
+            this.context.subscriptions
+        );
+    }
+
+    /**
+     * Publish a message to a topic
+     */
+    private async publishToTopic(payload: string, properties: MessageProperties): Promise<void> {
+        try {
+            const provider = this.connectionManager.getProvider(this.profileId);
+
+            if (!provider) {
+                throw new Error('Provider not found');
+            }
+
+            if (!provider.publishMessage) {
+                throw new Error('Provider does not support topic publishing');
+            }
+
+            await provider.publishMessage(this.topicName, payload, properties);
+
+            vscode.window.showInformationMessage(`Message published to topic: ${this.topicName}`);
+
+            // Close the panel
+            this.panel?.dispose();
+        } catch (error) {
+            vscode.window.showErrorMessage(`Error publishing message: ${(error as Error).message}`);
         }
     }
 }

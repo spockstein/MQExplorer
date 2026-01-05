@@ -147,6 +147,19 @@ export function registerCommands(context: vscode.ExtensionContext, treeDataProvi
         })
     );
 
+    // Browse subscription messages (ASB)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('mqexplorer.browseSubscriptionMessages', (item: MQTreeItem) => {
+            if (!item.profileId || !item.topicName || !item.subscriptionName) {
+                vscode.window.showErrorMessage('No subscription selected');
+                return;
+            }
+
+            const browser = new MessageBrowserWebview(context);
+            browser.showSubscription(item.profileId, item.topicName, item.subscriptionName);
+        })
+    );
+
     context.subscriptions.push(
         vscode.commands.registerCommand('mqexplorer.putMessage', (item: MQTreeItem) => {
             if (!item.profileId || !item.queueName) {
@@ -387,20 +400,9 @@ export function registerCommands(context: vscode.ExtensionContext, treeDataProvi
                     throw new Error('Publishing to topics not supported by this provider');
                 }
 
-                // Get the message payload from the user
-                const payload = await vscode.window.showInputBox({
-                    prompt: 'Enter message payload',
-                    placeHolder: 'Message payload'
-                });
-
-                if (payload === undefined) {
-                    return; // User cancelled
-                }
-
-                // Publish the message
-                await provider.publishMessage(item.queueName, payload);
-
-                vscode.window.showInformationMessage(`Message published to topic: ${item.label}`);
+                // Use the webview UI for publishing messages with full property support
+                const putWebview = new MessagePutWebview(context);
+                await putWebview.showTopicPublish(item.profileId, item.queueName);
             } catch (error) {
                 vscode.window.showErrorMessage(`Error publishing message: ${(error as Error).message}`);
             }

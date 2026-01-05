@@ -68,12 +68,6 @@ export function activate(context: vscode.ExtensionContext) {
 	// Register the tree view
 	context.subscriptions.push(treeView);
 
-	// Listen for queue updates (message delete, put, clear) and refresh the tree view
-	connectionManager.on(ConnectionManager.QUEUE_UPDATED, () => {
-		// Refresh the tree view to update queue depths
-		treeDataProvider.refresh();
-	});
-
 	// Add activity bar icon and view container
 	// Note: This is actually defined in package.json, but we're setting it up here for clarity
 

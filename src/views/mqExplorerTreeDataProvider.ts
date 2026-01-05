@@ -14,6 +14,7 @@ export enum MQTreeItemType {
     QUEUE = 'queue',
     TOPICS_FOLDER = 'topicsFolder',
     TOPIC = 'topic',
+    SUBSCRIPTION = 'subscription',
     CHANNELS_FOLDER = 'channelsFolder',
     CHANNEL = 'channel',
 }
@@ -30,7 +31,9 @@ export class MQTreeItem extends vscode.TreeItem {
         public readonly queueName?: string,
         public readonly contextValue?: string,
         public readonly description?: string,
-        public readonly iconPath?: string | vscode.ThemeIcon
+        public readonly iconPath?: string | vscode.ThemeIcon,
+        public readonly topicName?: string,  // For subscriptions
+        public readonly subscriptionName?: string  // For subscriptions
     ) {
         super(label, collapsibleState);
 
@@ -155,6 +158,13 @@ export class MQExplorerTreeDataProvider implements vscode.TreeDataProvider<MQTre
                 }
                 return [];
 
+            case MQTreeItemType.TOPIC:
+                // Show subscriptions under topics (for ASB)
+                if (element.profileId && element.queueName) {
+                    return this.getSubscriptions(element.profileId, element.queueName);
+                }
+                return [];
+
             case MQTreeItemType.CHANNELS_FOLDER:
                 // Show channels
                 if (element.profileId) {
@@ -255,9 +265,14 @@ export class MQExplorerTreeDataProvider implements vscode.TreeDataProvider<MQTre
     /**
      * Get folders under a queue manager
      */
-    private getQueueManagerFolders(profileId: string): MQTreeItem[] {
-        // Return Queues, Topics, and Channels folders
-        return [
+    private async getQueueManagerFolders(profileId: string): Promise<MQTreeItem[]> {
+        // Get profile to check provider type
+        const profiles = await this.connectionManager.getConnectionProfiles();
+        const profile = profiles.find(p => p.id === profileId);
+        const providerType = profile?.providerType || '';
+
+        // Build folders array
+        const folders: MQTreeItem[] = [
             new MQTreeItem(
                 'Queues',
                 vscode.TreeItemCollapsibleState.Collapsed,
@@ -277,18 +292,26 @@ export class MQExplorerTreeDataProvider implements vscode.TreeDataProvider<MQTre
                 'topicsFolder',
                 undefined,
                 new vscode.ThemeIcon('broadcast')
-            ),
-            new MQTreeItem(
-                'Channels',
-                vscode.TreeItemCollapsibleState.Collapsed,
-                MQTreeItemType.CHANNELS_FOLDER,
-                profileId,
-                undefined,
-                'channelsFolder',
-                undefined,
-                new vscode.ThemeIcon('circuit-board')
             )
         ];
+
+        // Only add Channels folder for providers that support channels (not ASB or AWS SQS)
+        if (providerType !== 'azureservicebus' && providerType !== 'awssqs') {
+            folders.push(
+                new MQTreeItem(
+                    'Channels',
+                    vscode.TreeItemCollapsibleState.Collapsed,
+                    MQTreeItemType.CHANNELS_FOLDER,
+                    profileId,
+                    undefined,
+                    'channelsFolder',
+                    undefined,
+                    new vscode.ThemeIcon('circuit-board')
+                )
+            );
+        }
+
+        return folders;
     }
 
     /**
@@ -414,15 +437,27 @@ export class MQExplorerTreeDataProvider implements vscode.TreeDataProvider<MQTre
                 ];
             }
 
+            // Check if provider supports subscriptions (ASB)
+            const supportsSubscriptions = typeof provider.listSubscriptions === 'function';
+
             return topics.map(topic => {
+                // Make topics collapsible if they support subscriptions
+                const collapsibleState = supportsSubscriptions && (topic.subscriptionCount || 0) > 0
+                    ? vscode.TreeItemCollapsibleState.Collapsed
+                    : vscode.TreeItemCollapsibleState.None;
+
+                const description = topic.subscriptionCount !== undefined
+                    ? `${topic.subscriptionCount} subscriptions`
+                    : topic.topicString;
+
                 return new MQTreeItem(
                     topic.name,
-                    vscode.TreeItemCollapsibleState.None,
+                    collapsibleState,
                     MQTreeItemType.TOPIC,
                     profileId,
-                    topic.topicString,
+                    topic.topicString,  // Using queueName field for topic name
                     'topic',
-                    topic.topicString,
+                    description,
                     new vscode.ThemeIcon('broadcast')
                 );
             });
@@ -437,6 +472,97 @@ export class MQExplorerTreeDataProvider implements vscode.TreeDataProvider<MQTre
                     profileId,
                     undefined,
                     'errorTopics',
+                    undefined,
+                    new vscode.ThemeIcon('error')
+                )
+            ];
+        }
+    }
+
+    /**
+     * Get subscriptions for a topic (ASB specific)
+     */
+    private async getSubscriptions(profileId: string, topicName: string): Promise<MQTreeItem[]> {
+        try {
+            const provider = this.connectionManager.getProvider(profileId);
+
+            if (!provider) {
+                throw new Error('Provider not found');
+            }
+
+            // Check if the provider supports subscriptions
+            if (!provider.listSubscriptions) {
+                return [
+                    new MQTreeItem(
+                        'Subscriptions not supported by this provider',
+                        vscode.TreeItemCollapsibleState.None,
+                        MQTreeItemType.SUBSCRIPTION,
+                        profileId,
+                        undefined,
+                        'subscriptionsNotSupported',
+                        undefined,
+                        new vscode.ThemeIcon('warning')
+                    )
+                ];
+            }
+
+            // Get subscriptions from provider
+            const subscriptions = await provider.listSubscriptions(topicName);
+
+            if (subscriptions.length === 0) {
+                return [
+                    new MQTreeItem(
+                        'No subscriptions found',
+                        vscode.TreeItemCollapsibleState.None,
+                        MQTreeItemType.SUBSCRIPTION,
+                        profileId,
+                        undefined,
+                        'noSubscriptions',
+                        undefined,
+                        new vscode.ThemeIcon('info')
+                    )
+                ];
+            }
+
+            return subscriptions.map(sub => {
+                // Build description with message count and rules info
+                const parts: string[] = [];
+                if (sub.messageCount !== undefined) {
+                    parts.push(`${sub.messageCount} msgs`);
+                }
+                if (sub.deadLetterMessageCount && sub.deadLetterMessageCount > 0) {
+                    parts.push(`${sub.deadLetterMessageCount} DLQ`);
+                }
+                if (sub.rules && sub.rules.length > 0) {
+                    const ruleInfo = sub.rules.map(r => r.filterType === 'sql' ? `SQL: ${r.filter}` : r.filterType).join(', ');
+                    parts.push(`Rules: ${ruleInfo}`);
+                }
+                const description = parts.join(' | ') || sub.status;
+
+                return new MQTreeItem(
+                    sub.name,
+                    vscode.TreeItemCollapsibleState.None,
+                    MQTreeItemType.SUBSCRIPTION,
+                    profileId,
+                    sub.name,  // Using queueName field for subscription name
+                    'subscription',
+                    description,
+                    new vscode.ThemeIcon('mail'),
+                    topicName,  // Store topic name
+                    sub.name    // Store subscription name
+                );
+            });
+        } catch (error) {
+            vscode.window.showErrorMessage(`Error listing subscriptions: ${(error as Error).message}`);
+
+            return [
+                new MQTreeItem(
+                    `Error: ${(error as Error).message}`,
+                    vscode.TreeItemCollapsibleState.None,
+                    MQTreeItemType.SUBSCRIPTION,
+                    profileId,
+                    undefined,
+                    'errorSubscriptions',
                     undefined,
                     new vscode.ThemeIcon('error')
                 )

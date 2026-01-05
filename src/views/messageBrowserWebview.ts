@@ -16,6 +16,10 @@ export class MessageBrowserWebview {
     private pageSize: number = 10;
     private queueDepth: number = 0;
     private filters: { messageId?: string; correlationId?: string } = {};
+    // Subscription support (ASB)
+    private topicName: string = '';
+    private subscriptionName: string = '';
+    private isSubscription: boolean = false;
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -134,6 +138,87 @@ export class MessageBrowserWebview {
     }
 
     /**
+     * Show the message browser webview for a subscription (ASB)
+     */
+    public async showSubscription(profileId: string, topicName: string, subscriptionName: string): Promise<void> {
+        this.profileId = profileId;
+        this.topicName = topicName;
+        this.subscriptionName = subscriptionName;
+        this.queueName = `${topicName}/${subscriptionName}`;  // For display purposes
+        this.isSubscription = true;
+
+        // If panel already exists, reveal it
+        if (this.panel) {
+            this.panel.reveal();
+            await this.loadMessages();
+            return;
+        }
+
+        // Create a new panel
+        this.panel = vscode.window.createWebviewPanel(
+            'mqexplorerMessageBrowser',
+            `Messages: ${topicName}/${subscriptionName}`,
+            vscode.ViewColumn.One,
+            {
+                enableScripts: true,
+                retainContextWhenHidden: true
+            }
+        );
+
+        // Load messages
+        await this.loadMessages();
+
+        // Handle messages from the webview (same handlers as queue browsing)
+        this.panel.webview.onDidReceiveMessage(
+            async (message) => {
+                switch (message.command) {
+                    case 'loadNextPage':
+                        await this.loadNextPage();
+                        break;
+                    case 'loadPreviousPage':
+                        await this.loadPreviousPage();
+                        break;
+                    case 'viewMessage':
+                        this.viewMessageDetails(message.messageIndex);
+                        break;
+                    case 'copyToClipboard':
+                        await vscode.env.clipboard.writeText(message.text);
+                        vscode.window.showInformationMessage('Copied to clipboard');
+                        break;
+                    case 'saveToFile':
+                        await this.saveMessageToFile(message.messageIndex, message.includeHeaders);
+                        break;
+                    case 'refresh':
+                        await this.loadMessages();
+                        break;
+                    case 'applyFilters':
+                        this.filters = message.filters || {};
+                        this.currentPage = 0;
+                        await this.loadMessages();
+                        break;
+                    case 'clearFilters':
+                        this.filters = {};
+                        this.currentPage = 0;
+                        await this.loadMessages();
+                        break;
+                }
+            },
+            undefined,
+            this.context.subscriptions
+        );
+
+        // Handle panel disposal
+        this.panel.onDidDispose(
+            () => {
+                this.panel = undefined;
+                this.isSubscription = false;
+            },
+            null,
+            this.context.subscriptions
+        );
+    }
+
+    /**
      * Load messages from the queue
      */
     private async loadMessages(): Promise<void> {
@@ -146,15 +231,6 @@ export class MessageBrowserWebview {
 
             if (!provider) {
                 throw new Error('Provider not found');
-            }
-
-            // Get the current queue depth directly
-            try {
-                this.queueDepth = await provider.getQueueDepth(this.queueName);
-                console.log(`Queue depth for ${this.queueName}: ${this.queueDepth}`);
-            } catch (error) {
-                console.error(`Error getting queue depth: ${(error as Error).message}`);
-                // Continue anyway, we'll just use the count of messages we get
             }
 
             // Load messages with pagination and filters
@@ -173,12 +249,30 @@ export class MessageBrowserWebview {
                 console.log(`Applying filters: ${JSON.stringify(browseOptions.filter)}`);
             }
 
-            this.messages = await provider.browseMessages(this.queueName, browseOptions);
-
-            // If we couldn't get the queue depth directly, estimate it from the messages we got
-            if (this.queueDepth === 0 && this.messages.length > 0) {
+            // Handle subscription vs queue browsing
+            if (this.isSubscription && provider.browseSubscriptionMessages) {
+                // Browse subscription messages
+                this.messages = await provider.browseSubscriptionMessages(this.topicName, this.subscriptionName, browseOptions);
+                // For subscriptions, we don't have a direct depth API, estimate from messages
                 this.queueDepth = this.messages.length + (this.currentPage * this.pageSize);
-                console.log(`Estimated queue depth for ${this.queueName}: ${this.queueDepth}`);
+                console.log(`Loaded ${this.messages.length} messages from subscription: ${this.topicName}/${this.subscriptionName}`);
+            } else {
+                // Get the current queue depth directly
+                try {
+                    this.queueDepth = await provider.getQueueDepth(this.queueName);
+                    console.log(`Queue depth for ${this.queueName}: ${this.queueDepth}`);
+                } catch (error) {
+                    console.error(`Error getting queue depth: ${(error as Error).message}`);
+                    // Continue anyway, we'll just use the count of messages we get
+                }
+
+                this.messages = await provider.browseMessages(this.queueName, browseOptions);
+
+                // If we couldn't get the queue depth directly, estimate it from the messages we got
+                if (this.queueDepth === 0 && this.messages.length > 0) {
+                    this.queueDepth = this.messages.length + (this.currentPage * this.pageSize);
+                    console.log(`Estimated queue depth for ${this.queueName}: ${this.queueDepth}`);
+                }
             }
 
             // Update the webview content
@@ -1174,8 +1268,66 @@ export class MessageBrowserWebview {
                         // Handle different value types
                         if (value === null || value === undefined) {
                             valueCell.textContent = '';
+                        } else if (name === 'applicationProperties' && typeof value === 'object' && !Array.isArray(value)) {
+                            // For applicationProperties, render as a sub-table for better readability
+                            const entries = Object.entries(value);
+                            if (entries.length === 0) {
+                                valueCell.textContent = '(empty)';
+                            } else {
+                                const subTable = document.createElement('table');
+                                subTable.style.width = '100%';
+                                subTable.style.borderCollapse = 'collapse';
+                                subTable.style.fontSize = '12px';
+                                subTable.style.backgroundColor = 'var(--vscode-editor-background)';
+                                subTable.style.borderRadius = '3px';
+
+                                // Add header row
+                                const headerRow = subTable.insertRow();
+                                const headerName = headerRow.insertCell(0);
+                                const headerValue = headerRow.insertCell(1);
+                                headerName.textContent = 'Header';
+                                headerValue.textContent = 'Value';
+                                headerName.style.fontWeight = 'bold';
+                                headerValue.style.fontWeight = 'bold';
+                                headerName.style.padding = '4px 8px';
+                                headerValue.style.padding = '4px 8px';
+                                headerName.style.borderBottom = '1px solid var(--vscode-panel-border)';
+                                headerValue.style.borderBottom = '1px solid var(--vscode-panel-border)';
+                                headerName.style.backgroundColor = 'var(--vscode-editor-background)';
+                                headerValue.style.backgroundColor = 'var(--vscode-editor-background)';
+
+                                // Add each property as a row
+                                for (const [propName, propValue] of entries) {
+                                    const propRow = subTable.insertRow();
+                                    const propNameCell = propRow.insertCell(0);
+                                    const propValueCell = propRow.insertCell(1);
+
+                                    propNameCell.textContent = propName;
+                                    propNameCell.style.padding = '4px 8px';
+                                    propNameCell.style.borderBottom = '1px solid var(--vscode-panel-border)';
+                                    propNameCell.style.color = 'var(--vscode-textLink-foreground)';
+                                    propNameCell.style.verticalAlign = 'top';
+
+                                    propValueCell.style.padding = '4px 8px';
+                                    propValueCell.style.borderBottom = '1px solid var(--vscode-panel-border)';
+                                    propValueCell.style.wordBreak = 'break-word';
+
+                                    // Handle nested objects/arrays in property values
+                                    if (propValue !== null && typeof propValue === 'object') {
+                                        try {
+                                            propValueCell.textContent = JSON.stringify(propValue);
+                                        } catch (e) {
+                                            propValueCell.textContent = String(propValue);
+                                        }
+                                    } else {
+                                        propValueCell.textContent = String(propValue ?? '');
+                                    }
+                                }
+
+                                valueCell.appendChild(subTable);
+                            }
                         } else if (typeof value === 'object') {
-                            // For objects and arrays, format as JSON with syntax highlighting
+                            // For other objects and arrays, format as JSON with syntax highlighting
                             try {
                                 const jsonStr = JSON.stringify(value, null, 2);
                                 const pre = document.createElement('pre');
@@ -1583,6 +1735,9 @@ export class MessageBrowserWebview {
             // Emit queue updated event to trigger UI refresh
             this.connectionManager.emit('queueUpdated', this.queueName);
 
+            // Refresh the tree view to update queue depth
+            vscode.commands.executeCommand('mqexplorer.refreshTreeView');
+
             // Refresh the message list immediately
             await this.refreshMessageList();
         } catch (error) {
@@ -1627,6 +1782,9 @@ export class MessageBrowserWebview {
 
             // Emit queue updated event to trigger UI refresh
             this.connectionManager.emit('queueUpdated', this.queueName);
+
+            // Refresh the tree view to update queue depth
+            vscode.commands.executeCommand('mqexplorer.refreshTreeView');
 
             // Refresh the message list immediately
             await this.refreshMessageList();

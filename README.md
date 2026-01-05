@@ -215,34 +215,39 @@ Channel: DEV.APP.SVRCONN
 
 See the [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
-### Latest Release: v0.5.4
+### Latest Release: v0.5.13
 
-#### v0.5.4 - Export Full Message with Headers
-- **New Feature**: Added "Save Full Message" button to export message payload along with headers as JSON
-- Export includes message ID, correlation ID, timestamp, and all message properties
-- Smart payload handling: JSON payloads are parsed and formatted, strings kept as-is
+#### v0.5.13 - ASB Diagnostics & Debugging
+- **Enhanced Logging**: Added detailed diagnostic logging for Azure Service Bus message operations
+- **Queue Runtime Properties**: Browse operations now log message counts for troubleshooting
+- **Put Message Verification**: Queue depth is logged after sending to verify message was enqueued
 
-#### v0.5.3 - Text Tab JSON Formatting
-- **Fixed**: Text tab now displays formatted JSON with syntax highlighting when payload is valid JSON
-- Both Text and JSON tabs show consistent formatted output for JSON payloads
+#### v0.5.12 - Critical ASB Delete Fix
+- **Critical Fix**: Fixed bug where deleting a single ASB message could purge the entire queue
+- **Root Cause**: Now uses `sequenceNumber` (unique in ASB) instead of `messageId` for message identification
+- **Safety**: Added explicit abandonment of non-matching messages and attempt limits
 
-#### v0.5.2 - JSON Headers Rendering
-- **Fixed**: Message headers containing JSON objects/arrays (like `x-death`) now render properly instead of `[object Object]`
-- Large JSON values in headers displayed in scrollable containers
+#### v0.5.11 - ASB Application Properties Display
+- **Improved**: Application Properties are now displayed as a sub-table instead of JSON
+- **Better Readability**: Each property/value pair shown as its own row with "Header" and "Value" columns
 
-#### v0.5.1 - JSON & XML Syntax Highlighting
-- **New Feature**: Message payloads with JSON/XML content now display with full syntax highlighting
-- Theme-aware colors that adapt to VS Code's light and dark themes
-- Auto-detection of JSON/XML content with dedicated tabs
+#### v0.5.10 - Hide Unsupported Channels Folder
+- **Improved**: Removed "Channels" folder from tree view for Azure Service Bus and AWS SQS
+- **Cleaner UI**: Users only see folders relevant to their messaging provider
 
-#### v0.5.0 - RabbitMQ Message Browsing Fix
-- **Critical Fix**: Fixed issue where RabbitMQ queues showed correct depth but displayed "No messages found"
-- **New Feature**: Configurable RabbitMQ Management API port for non-standard configurations
-- Improved message payload decoding for both base64 and UTF-8 encoded payloads
+#### v0.5.9 - ASB Topics, Subscriptions & System Properties
+- **Subscription Browsing**: Topics now show subscriptions in tree view with message browsing
+- **Subscription Rules/Filters**: Message browser shows SQL, Correlation, and True filters
+- **Full Publish Properties**: Rich webview UI for publishing with all ASB system properties
+- **Enhanced Properties Display**: Comprehensive ASB system properties in message browser
+- **Fixed**: Tree view now shows accurate queue depth for ASB queues
 
 #### Previous Releases
-- **v0.2.0**: Known Queues Configuration, Optimized Queue Discovery, Fixed Message Delete Operations
-- **v0.4.0**: macOS Connection Fix, Cross-Platform Support, Graceful Degradation without IBM MQ
+- **v0.5.4**: Export Full Message with Headers (payload + headers as JSON)
+- **v0.5.1**: JSON & XML Syntax Highlighting in message viewer
+- **v0.5.0**: RabbitMQ Message Browsing Fix, Configurable Management Port
+- **v0.4.0**: macOS Connection Fix, Cross-Platform Support
+- **v0.2.0**: Known Queues Configuration, Optimized Queue Discovery
 
 ## 📄 License
 

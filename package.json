@@ -2,7 +2,7 @@
   "name": "mqexplorer",
   "displayName": "MQ Explorer",
   "description": "A VS Code extension for browsing and managing message queues across multiple providers",
-  "version": "0.5.7",
+  "version": "0.5.13",
   "publisher": "praxai",
   "icon": "resources/icon.png",
   "repository": {
@@ -133,6 +133,11 @@
       {
         "command": "mqexplorer.browseMessages",
         "title": "Browse Messages",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "mqexplorer.browseSubscriptionMessages",
+        "title": "Browse Subscription Messages",
         "icon": "$(eye)"
       },
       {
@@ -321,6 +326,11 @@
         {
           "command": "mqexplorer.publishMessage",
           "when": "view == mqexplorer && viewItem == topic",
+          "group": "inline"
+        },
+        {
+          "command": "mqexplorer.browseSubscriptionMessages",
+          "when": "view == mqexplorer && viewItem == subscription",
           "group": "inline"
         },
         {
