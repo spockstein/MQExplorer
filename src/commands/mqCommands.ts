@@ -201,11 +201,14 @@ export function registerCommands(context: vscode.ExtensionContext, treeDataProvi
                     // Emit queue updated event to trigger UI refresh
                     connectionManager.emit('queueUpdated', item.queueName);
 
-                    // Add a small delay to allow RabbitMQ Management API to update
-                    await new Promise(resolve => setTimeout(resolve, 500));
-
-                    // Refresh the tree view to update queue depth
+                    // Refresh tree view immediately
                     treeDataProvider.refresh();
+
+                    // Schedule additional refreshes to catch eventual consistency delays
+                    // (RabbitMQ Management API and ASB can take several seconds to update)
+                    setTimeout(() => treeDataProvider.refresh(), 1000);
+                    setTimeout(() => treeDataProvider.refresh(), 3000);
+                    setTimeout(() => treeDataProvider.refresh(), 6000);
                 } catch (error) {
                     vscode.window.showErrorMessage(`Error clearing queue: ${(error as Error).message}`);
                 }

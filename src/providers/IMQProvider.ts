@@ -114,6 +114,14 @@ export interface IMQProvider {
     listSubscriptions?(topicName: string): Promise<SubscriptionInfo[]>;
 
     /**
+     * Get subscription info including rules (ASB specific)
+     * @param topicName Name of the topic
+     * @param subscriptionName Name of the subscription
+     * @returns Promise that resolves with subscription information
+     */
+    getSubscriptionInfo?(topicName: string, subscriptionName: string): Promise<SubscriptionInfo | undefined>;
+
+    /**
      * Browse messages in a subscription (ASB specific)
      * @param topicName Name of the topic
      * @param subscriptionName Name of the subscription

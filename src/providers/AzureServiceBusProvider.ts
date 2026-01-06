@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ServiceBusClient, ServiceBusAdministrationClient, ServiceBusReceiver, ServiceBusSender, ServiceBusMessage, RetryOptions } from '@azure/service-bus';
 import { ClientSecretCredential } from '@azure/identity';
 import { v4 as uuidv4 } from 'uuid';
+import Long from 'long';
 import {
     IMQProvider,
     QueueInfo,
@@ -12,7 +13,8 @@ import {
     QueueProperties,
     TopicProperties,
     ChannelInfo,
-    ChannelStatus
+    ChannelStatus,
+    SubscriptionInfo
 } from './IMQProvider';
 import { AzureServiceBusConnectionProfile } from '../models/connectionProfile';
 
@@ -263,8 +265,10 @@ export class AzureServiceBusProvider implements IMQProvider {
             const receiver = this.serviceBusClient!.createReceiver(queueName, { receiveMode: 'peekLock' });
 
             // Peek messages from the queue (non-destructive operation)
-            this.log(`Peeking up to ${limit} messages from queue: ${queueName}`);
-            const sbMessages = await receiver.peekMessages(limit);
+            // Always start from sequence number 0 to ensure we get messages from the beginning
+            // Without fromSequenceNumber, the SDK may use a cached sequence position
+            this.log(`Peeking up to ${limit} messages from queue: ${queueName}, starting from sequence 0`);
+            const sbMessages = await receiver.peekMessages(limit, { fromSequenceNumber: Long.fromNumber(0) });
             this.log(`Peeked ${sbMessages.length} messages from queue: ${queueName}`);
 
             // Convert to our Message format
@@ -346,11 +350,8 @@ export class AzureServiceBusProvider implements IMQProvider {
                 return message;
             });
 
-            // Cache the messages for later operations
-            if (!this.messageCache.has(queueName)) {
-                this.messageCache.set(queueName, new Map());
-            }
-
+            // Clear and rebuild the cache for this queue to ensure fresh data
+            this.messageCache.set(queueName, new Map());
             const queueCache = this.messageCache.get(queueName)!;
             messages.forEach(msg => {
                 queueCache.set(msg.id, msg);
@@ -594,6 +595,25 @@ export class AzureServiceBusProvider implements IMQProvider {
     }
 
     /**
+     * Get subscription info including rules
+     * @param topicName Name of the topic
+     * @param subscriptionName Name of the subscription
+     */
+    public async getSubscriptionInfo(topicName: string, subscriptionName: string): Promise<SubscriptionInfo | undefined> {
+        try {
+            this.checkConnection();
+            this.log(`Getting subscription info: ${topicName}/${subscriptionName}`);
+
+            // Get all subscriptions for the topic and find the one we want
+            const subscriptions = await this.listSubscriptions(topicName);
+            return subscriptions.find(s => s.name === subscriptionName);
+        } catch (error) {
+            this.log(`Error getting subscription info: ${(error as Error).message}`, true);
+            throw error;
+        }
+    }
+
+    /**
      * Browse messages in a subscription (non-destructive peek)
      * @param topicName Name of the topic
      * @param subscriptionName Name of the subscription
@@ -610,7 +630,8 @@ export class AzureServiceBusProvider implements IMQProvider {
             const receiver = this.serviceBusClient!.createReceiver(topicName, subscriptionName, { receiveMode: 'peekLock' });
 
             // Peek messages from the subscription
-            const sbMessages = await receiver.peekMessages(limit);
+            // Always start from sequence number 0 to ensure we get messages from the beginning
+            const sbMessages = await receiver.peekMessages(limit, { fromSequenceNumber: Long.fromNumber(0) });
 
             // Convert to our Message format (reusing the same logic as browseMessages)
             const messages: Message[] = sbMessages.map(sbMessage => {

@@ -2,6 +2,33 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.15] - 2026-01-06
+
+### 🐛 Critical Bug Fixes
+
+#### ASB Messages Disappearing on Refresh (Issue #15)
+- **Critical Fix**: Fixed issue where ASB messages disappeared after clicking refresh or after putting a new message
+- **Root Cause**: The `peekMessages()` call was using SDK's internal cached sequence position instead of starting from the beginning
+- **Solution**: Now explicitly passing `fromSequenceNumber: 0` to ensure we always peek from the start of the queue
+- **Result**: Messages are now correctly displayed on every refresh
+
+#### ASB Delete Message View Not Updating (Issue #14)
+- **Fixed**: After deleting a message, the message list would appear empty instead of showing remaining messages
+- **Root Cause**: Abandoned messages during the delete search were temporarily locked and not visible to peek
+- **Solution**: Added 2-second delay after delete to allow ASB to release message locks before refreshing
+- **Additional Fix**: Message cache is now cleared and rebuilt on each browse to ensure fresh data
+
+### 🎨 UI Improvements
+
+#### Subscription Filter Rules Display (Issue #11)
+- **New Feature**: Subscription filter rules are now displayed in a dedicated table in the message browser
+- **Easier to Read**: Rules table shows Rule Name, Filter Type, Filter Expression, and Action columns
+- **Copyable**: Filter expressions are now easily readable and copyable (vs. tooltip only)
+
+#### Cleaner Message Properties Display (Issue #10)
+- **Improved**: Properties with null, undefined, or empty values are now hidden from the message properties table
+- **Cleaner UI**: Only properties with actual values are displayed, reducing clutter
+
 ## [0.5.14] - 2026-01-05
 
 ### 🐛 Bug Fixes

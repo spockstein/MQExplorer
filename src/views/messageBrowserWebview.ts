@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ConnectionManager } from '../services/connectionManager';
-import { Message } from '../providers/IMQProvider';
+import { Message, SubscriptionInfo } from '../providers/IMQProvider';
 
 /**
  * Manages the webview for browsing messages
@@ -20,6 +20,7 @@ export class MessageBrowserWebview {
     private topicName: string = '';
     private subscriptionName: string = '';
     private isSubscription: boolean = false;
+    private subscriptionInfo: SubscriptionInfo | undefined;
 
     constructor(context: vscode.ExtensionContext) {
         this.context = context;
@@ -251,6 +252,16 @@ export class MessageBrowserWebview {
 
             // Handle subscription vs queue browsing
             if (this.isSubscription && provider.browseSubscriptionMessages) {
+                // Get subscription info (including rules) if not already fetched
+                if (!this.subscriptionInfo && provider.getSubscriptionInfo) {
+                    try {
+                        this.subscriptionInfo = await provider.getSubscriptionInfo(this.topicName, this.subscriptionName);
+                        console.log(`Fetched subscription info for ${this.topicName}/${this.subscriptionName}:`, this.subscriptionInfo);
+                    } catch (error) {
+                        console.error(`Error getting subscription info: ${(error as Error).message}`);
+                    }
+                }
+
                 // Browse subscription messages
                 this.messages = await provider.browseSubscriptionMessages(this.topicName, this.subscriptionName, browseOptions);
                 // For subscriptions, we don't have a direct depth API, estimate from messages
@@ -436,6 +447,64 @@ export class MessageBrowserWebview {
         }
 
         this.panel.webview.html = this.getWebviewContent();
+    }
+
+    /**
+     * Generate HTML for subscription rules section
+     */
+    private getSubscriptionRulesHtml(): string {
+        // Only show for subscriptions with rules
+        if (!this.isSubscription || !this.subscriptionInfo?.rules || this.subscriptionInfo.rules.length === 0) {
+            return '';
+        }
+
+        const rulesRows = this.subscriptionInfo.rules.map(rule => {
+            const filterTypeLabel = rule.filterType === 'sql' ? 'SQL' :
+                                    rule.filterType === 'correlation' ? 'Correlation' :
+                                    'True Filter';
+            const filterValue = rule.filter || '(matches all)';
+            const actionValue = rule.action || '(none)';
+
+            return `
+                <tr>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--vscode-panel-border); font-weight: bold;">${this.escapeHtml(rule.name)}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--vscode-panel-border);">${filterTypeLabel}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--vscode-panel-border); font-family: monospace; word-break: break-all; max-width: 400px;">${this.escapeHtml(filterValue)}</td>
+                    <td style="padding: 8px; border-bottom: 1px solid var(--vscode-panel-border); font-family: monospace;">${this.escapeHtml(actionValue)}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="subscription-rules" style="margin: 10px 0; padding: 10px; background: var(--vscode-editor-background); border: 1px solid var(--vscode-panel-border); border-radius: 4px;">
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; color: var(--vscode-textLink-foreground);">Subscription Filter Rules</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                    <thead>
+                        <tr style="background: var(--vscode-editor-inactiveSelectionBackground);">
+                            <th style="padding: 8px; text-align: left; border-bottom: 2px solid var(--vscode-panel-border);">Rule Name</th>
+                            <th style="padding: 8px; text-align: left; border-bottom: 2px solid var(--vscode-panel-border);">Filter Type</th>
+                            <th style="padding: 8px; text-align: left; border-bottom: 2px solid var(--vscode-panel-border);">Filter Expression</th>
+                            <th style="padding: 8px; text-align: left; border-bottom: 2px solid var(--vscode-panel-border);">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rulesRows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    /**
+     * Escape HTML characters
+     */
+    private escapeHtml(text: string): string {
+        return text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
     /**
@@ -731,6 +800,7 @@ export class MessageBrowserWebview {
                     <button id="toggleFiltersBtn">Filters</button>
                 </div>
             </div>
+            ${this.getSubscriptionRulesHtml()}
 
             <div class="filters" id="filtersSection" style="display: none;">
                 <h3>Message Filters</h3>
@@ -1259,6 +1329,12 @@ export class MessageBrowserWebview {
                     }
 
                     function addPropertyRow(table, name, value) {
+                        // Skip properties with no value (null, undefined, or empty string)
+                        // Exception: applicationProperties should always be shown even if empty
+                        if ((value === null || value === undefined || value === '') && name !== 'applicationProperties') {
+                            return;
+                        }
+
                         const row = table.insertRow();
                         const nameCell = row.insertCell(0);
                         const valueCell = row.insertCell(1);
@@ -1266,7 +1342,7 @@ export class MessageBrowserWebview {
                         nameCell.textContent = name;
 
                         // Handle different value types
-                        if (value === null || value === undefined) {
+                        if (value === null || value === undefined || value === '') {
                             valueCell.textContent = '';
                         } else if (name === 'applicationProperties' && typeof value === 'object' && !Array.isArray(value)) {
                             // For applicationProperties, render as a sub-table for better readability
@@ -1738,7 +1814,11 @@ export class MessageBrowserWebview {
             // Refresh the tree view to update queue depth
             vscode.commands.executeCommand('mqexplorer.refreshTreeView');
 
-            // Refresh the message list immediately
+            // Wait for ASB to release any locks before refreshing
+            // (Abandoned messages need time to become visible again)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Refresh the message list
             await this.refreshMessageList();
         } catch (error) {
             vscode.window.showErrorMessage(`Error deleting message: ${(error as Error).message}`);
@@ -1786,7 +1866,11 @@ export class MessageBrowserWebview {
             // Refresh the tree view to update queue depth
             vscode.commands.executeCommand('mqexplorer.refreshTreeView');
 
-            // Refresh the message list immediately
+            // Wait for ASB to release any locks before refreshing
+            // (Abandoned messages need time to become visible again)
+            await new Promise(resolve => setTimeout(resolve, 2000));
+
+            // Refresh the message list
             await this.refreshMessageList();
         } catch (error) {
             vscode.window.showErrorMessage(`Error deleting messages: ${(error as Error).message}`);

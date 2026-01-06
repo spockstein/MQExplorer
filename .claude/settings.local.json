@@ -4,7 +4,8 @@
       "Bash(gh issue:*)",
       "Bash(npm run compile:*)",
       "Bash(npx @vscode/vsce:*)",
-      "Bash(npm run package:*)"
+      "Bash(npm run package:*)",
+      "Bash(grep:*)"
     ]
   }
 }
