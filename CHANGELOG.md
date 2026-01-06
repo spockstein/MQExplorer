@@ -2,6 +2,23 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.14] - 2026-01-05
+
+### 🐛 Bug Fixes
+
+#### Queue Depth Not Updating After Clear Queue (Issue #8)
+- **Fixed**: Clearing a queue wasn't updating the queue depth count in the tree view
+- **Root Cause**: RabbitMQ Management API has a polling interval and may not immediately reflect changes
+- **Solution**: Added 500ms delay before refreshing tree view, plus emit `queueUpdated` event for consistency
+- **Result**: Queue depth now updates reliably after clearing a queue
+
+### 🎨 UI Improvements
+
+#### Hide Unsupported Channels Folder for RabbitMQ (Issue #12)
+- **Improved**: Removed "Channels" folder from tree view for RabbitMQ connections
+- **Consistency**: RabbitMQ now joins Azure Service Bus and AWS SQS in hiding unsupported Channels folder
+- **Cleaner UI**: Users only see folders relevant to their messaging provider
+
 ## [0.5.13] - 2026-01-04
 
 ### 🔍 Diagnostics & Debugging

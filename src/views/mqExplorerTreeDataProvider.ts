@@ -295,8 +295,8 @@ export class MQExplorerTreeDataProvider implements vscode.TreeDataProvider<MQTre
             )
         ];
 
-        // Only add Channels folder for providers that support channels (not ASB or AWS SQS)
-        if (providerType !== 'azureservicebus' && providerType !== 'awssqs') {
+        // Only add Channels folder for providers that support channels (not ASB, AWS SQS, or RabbitMQ)
+        if (providerType !== 'azureservicebus' && providerType !== 'awssqs' && providerType !== 'rabbitmq') {
             folders.push(
                 new MQTreeItem(
                     'Channels',

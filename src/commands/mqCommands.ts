@@ -198,7 +198,13 @@ export function registerCommands(context: vscode.ExtensionContext, treeDataProvi
 
                     vscode.window.showInformationMessage(`Queue ${item.queueName} cleared`);
 
-                    // Refresh the tree view
+                    // Emit queue updated event to trigger UI refresh
+                    connectionManager.emit('queueUpdated', item.queueName);
+
+                    // Add a small delay to allow RabbitMQ Management API to update
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    // Refresh the tree view to update queue depth
                     treeDataProvider.refresh();
                 } catch (error) {
                     vscode.window.showErrorMessage(`Error clearing queue: ${(error as Error).message}`);
