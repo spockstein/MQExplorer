@@ -5,7 +5,10 @@
       "Bash(npm run compile:*)",
       "Bash(npx @vscode/vsce:*)",
       "Bash(npm run package:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "WebFetch(domain:www.mqtechconference.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.ibm.com)"
     ]
   }
 }

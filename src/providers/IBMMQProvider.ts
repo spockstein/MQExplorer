@@ -1442,7 +1442,7 @@ export class IBMMQProvider implements IMQProvider {
         this.log(`🔍 Starting user-accessible queue discovery with filter: ${filter}`);
 
         try {
-            // First try PCF if user has admin access
+            // Try PCF discovery (MQCMD_INQUIRE_Q_NAMES first, then MQCMD_INQUIRE_Q)
             return await this.tryPCFDiscovery(filter);
         } catch (pcfError) {
             if (pcfError instanceof Error && 'mqrc' in pcfError) {
@@ -1458,9 +1458,97 @@ export class IBMMQProvider implements IMQProvider {
     }
 
     /**
-     * Try PCF discovery (requires admin access)
+     * Try PCF discovery - attempts MQCMD_INQUIRE_Q_NAMES first (lighter, less restrictive),
+     * then falls back to MQCMD_INQUIRE_Q if needed.
      */
     private async tryPCFDiscovery(filter: string): Promise<string[]> {
+        // First try MQCMD_INQUIRE_Q_NAMES - requires only queue-manager-level +dsp authority
+        // (same approach used by Java-based MQ tools like MQAdminTool)
+        try {
+            const names = await this.tryPCFInquireQueueNames(filter);
+            if (names.length > 0) {
+                return names;
+            }
+        } catch (namesError) {
+            this.log(`⚠️ MQCMD_INQUIRE_Q_NAMES failed: ${(namesError as Error).message}, falling back to MQCMD_INQUIRE_Q`);
+        }
+
+        // Fall back to MQCMD_INQUIRE_Q - requires per-queue +dsp authority
+        return await this.tryPCFInquireQ(filter);
+    }
+
+    /**
+     * Try PCF discovery using MQCMD_INQUIRE_Q_NAMES (Command Code: 18)
+     * This command only requires +dsp on the queue manager object (not per-queue),
+     * making it work for users with basic PCF access but without per-queue display authority.
+     * Returns a simple list of queue names.
+     */
+    private async tryPCFInquireQueueNames(filter: string): Promise<string[]> {
+        this.log(`🔍 Attempting PCF MQCMD_INQUIRE_Q_NAMES (lightweight discovery)`);
+
+        let hCmdQ: { hObj: mq.MQObject; name: string } | null = null;
+        let hReplyQ: { hObj: mq.MQObject; name: string } | null = null;
+
+        try {
+            // A. Open Command Queue
+            const commandQueueName = "SYSTEM.ADMIN.COMMAND.QUEUE";
+            hCmdQ = await this.openQueue(commandQueueName, mq.MQC.MQOO_OUTPUT | mq.MQC.MQOO_FAIL_IF_QUIESCING);
+
+            // B. Open Model Queue to get a Dynamic Reply Queue
+            const replyOd = new mq.MQOD();
+            replyOd.ObjectName = "SYSTEM.DEFAULT.MODEL.QUEUE";
+            replyOd.DynamicQName = `TEMP.REPLY.${Date.now()}`;
+            replyOd.ObjectType = mq.MQC.MQOT_Q;
+
+            const replyHObj = await new Promise<mq.MQObject>((resolve, reject) => {
+                // @ts-ignore - IBM MQ types are incorrect
+                mq.Open(this.connectionHandle!, replyOd, mq.MQC.MQOO_INPUT_EXCLUSIVE, (err: any, hObj: mq.MQObject) => {
+                    if (err) {
+                        reject(new Error(`Failed to create dynamic reply queue: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+                    } else {
+                        resolve(hObj);
+                    }
+                });
+            });
+
+            const actualReplyQName = replyOd.ObjectName.trim();
+            hReplyQ = { hObj: replyHObj, name: actualReplyQName };
+            this.log(`✅ Created dynamic reply queue: ${actualReplyQName}`);
+
+            // C. Build and send PCF MQCMD_INQUIRE_Q_NAMES command
+            const pcfMessage = this.buildPCFInquireQueueNamesCommand(filter);
+            await this.sendProperPCFCommand(hCmdQ.hObj, pcfMessage, actualReplyQName);
+
+            // D. Parse the response - MQCMD_INQUIRE_Q_NAMES returns a single response with a string list
+            const queueNames = await this.parsePCFQueueNamesResponse(hReplyQ.hObj);
+            this.log(`✅ PCF MQCMD_INQUIRE_Q_NAMES returned ${queueNames.length} queues`);
+
+            return queueNames;
+
+        } finally {
+            if (hReplyQ && hReplyQ.hObj) {
+                try {
+                    await this.closeObject(hReplyQ.hObj, hReplyQ.name);
+                } catch (closeErr) {
+                    this.log(`⚠️ Error closing reply queue: ${(closeErr as Error).message}`);
+                }
+            }
+            if (hCmdQ && hCmdQ.hObj) {
+                try {
+                    await this.closeObject(hCmdQ.hObj, hCmdQ.name);
+                } catch (closeErr) {
+                    this.log(`⚠️ Error closing command queue: ${(closeErr as Error).message}`);
+                }
+            }
+        }
+    }
+
+    /**
+     * Try PCF discovery using MQCMD_INQUIRE_Q (Command Code: 13)
+     * This command requires +dsp on each individual queue object.
+     * Returns detailed queue attributes but has stricter permission requirements.
+     */
+    private async tryPCFInquireQ(filter: string): Promise<string[]> {
         this.log(`🔍 Attempting PCF MQCMD_INQUIRE_Q with admin access`);
 
         let hCmdQ: { hObj: mq.MQObject; name: string } | null = null;
@@ -1733,12 +1821,149 @@ export class IBMMQProvider implements IMQProvider {
     }
 
     /**
+     * Build PCF MQCMD_INQUIRE_Q_NAMES command (Command Code: 18)
+     * Lighter-weight command that returns just queue names.
+     * Only requires +dsp authority on the queue manager object (not per-queue).
+     */
+    private buildPCFInquireQueueNamesCommand(filter: string): Buffer {
+        this.log(`🔧 Building PCF MQCMD_INQUIRE_Q_NAMES command with filter: ${filter}`);
+
+        const command = mq.MQC.MQCMD_INQUIRE_Q_NAMES; // Command Code: 18
+        const version = 3; // MQCFH_VERSION_3
+        const type = mq.MQC.MQCFT_COMMAND;
+        const parameterCount = 2; // MQCA_Q_NAME, MQIA_Q_TYPE
+
+        const bufferSize = 4096;
+        const buffer = Buffer.alloc(bufferSize);
+        let offset = 0;
+
+        // MQCFH (PCF Header) - 28 bytes
+        buffer.writeInt32BE(type, offset); offset += 4;           // Type: MQCFT_COMMAND
+        buffer.writeInt32BE(bufferSize, offset); offset += 4;     // StrucLength (corrected at end)
+        buffer.writeInt32BE(version, offset); offset += 4;        // Version
+        buffer.writeInt32BE(command, offset); offset += 4;        // Command: MQCMD_INQUIRE_Q_NAMES (18)
+        buffer.writeInt32BE(1, offset); offset += 4;              // MsgSeqNumber
+        buffer.writeInt32BE(mq.MQC.MQCFC_LAST, offset); offset += 4; // Control
+        buffer.writeInt32BE(parameterCount, offset); offset += 4; // ParameterCount
+
+        // Parameter 1: MQCA_Q_NAME (MQCFST - String Parameter)
+        const queueFilter = filter === '*' ? '*' : filter;
+        const queueFilterPadded = queueFilter.padEnd(Math.max(queueFilter.length, 4), ' ');
+        const queueFilterStructLength = 16 + queueFilterPadded.length;
+
+        buffer.writeInt32BE(mq.MQC.MQCFT_STRING, offset); offset += 4;  // Type: MQCFT_STRING (4)
+        buffer.writeInt32BE(queueFilterStructLength, offset); offset += 4; // StrucLength
+        buffer.writeInt32BE(mq.MQC.MQCA_Q_NAME, offset); offset += 4;   // Parameter
+        buffer.writeInt32BE(queueFilterPadded.length, offset); offset += 4; // StringLength
+        buffer.write(queueFilterPadded, offset, queueFilterPadded.length, 'ascii'); offset += queueFilterPadded.length;
+
+        // Parameter 2: MQIA_Q_TYPE (MQCFIN - Integer Parameter)
+        buffer.writeInt32BE(mq.MQC.MQCFT_INTEGER, offset); offset += 4;  // Type: MQCFT_INTEGER (3)
+        buffer.writeInt32BE(16, offset); offset += 4;                     // StrucLength
+        buffer.writeInt32BE(mq.MQC.MQIA_Q_TYPE, offset); offset += 4;   // Parameter
+        buffer.writeInt32BE(mq.MQC.MQQT_ALL, offset); offset += 4;      // Value
+
+        // Correct the total structure length in the header
+        buffer.writeInt32BE(offset, 4);
+
+        return buffer.subarray(0, offset);
+    }
+
+    /**
+     * Parse PCF response for MQCMD_INQUIRE_Q_NAMES command.
+     * The response contains a single message with an MQCFSL (string list) of queue names.
+     * Response parameter: MQCACF_Q_NAMES (3011)
+     */
+    private async parsePCFQueueNamesResponse(replyQueueHandle: mq.MQObject): Promise<string[]> {
+        const queueNames: string[] = [];
+
+        try {
+            const gmo = new mq.MQGMO();
+            gmo.Options = mq.MQC.MQGMO_WAIT | mq.MQC.MQGMO_NO_SYNCPOINT | mq.MQC.MQGMO_CONVERT | mq.MQC.MQGMO_FAIL_IF_QUIESCING;
+            gmo.WaitInterval = 5000;
+
+            const MAX_PCF_MSG_LEN = 1024 * 100; // 100KB buffer
+            const responseBuffer = Buffer.alloc(MAX_PCF_MSG_LEN);
+            const responseMd = new mq.MQMD();
+
+            // @ts-ignore - IBM MQ types are incorrect
+            const bytesRead = mq.GetSync(replyQueueHandle, responseMd, gmo, responseBuffer) as number;
+
+            if (bytesRead <= 28) {
+                this.log(`⚠️ MQCMD_INQUIRE_Q_NAMES response too short (${bytesRead} bytes)`);
+                return [];
+            }
+
+            const response = responseBuffer.subarray(0, bytesRead);
+
+            // Parse MQCFH header (28 bytes)
+            const responseType = response.readInt32BE(0);
+            const responseCommand = response.readInt32BE(12);
+            const completionCode = response.readInt32BE(16);
+            const reasonCode = response.readInt32BE(20);
+            const paramCount = response.readInt32BE(24);
+
+            this.log(`📋 MQCMD_INQUIRE_Q_NAMES response: type=${responseType}, command=${responseCommand}, CC=${completionCode}, RC=${reasonCode}, params=${paramCount}`);
+
+            if (completionCode !== 0) {
+                this.log(`⚠️ MQCMD_INQUIRE_Q_NAMES failed with CC=${completionCode}, RC=${reasonCode}`);
+                return [];
+            }
+
+            // Parse parameters starting after the 28-byte header
+            let offset = 28;
+            while (offset < bytesRead) {
+                if (offset + 16 > bytesRead) break;
+
+                const paramType = response.readInt32BE(offset);
+                const paramLength = response.readInt32BE(offset + 4);
+                const paramId = response.readInt32BE(offset + 8);
+
+                if (paramLength <= 0 || offset + paramLength > bytesRead) break;
+
+                // Look for MQCACF_Q_NAMES (3011) - this is an MQCFSL (string list)
+                // MQCFSL structure: Type(4) + Length(4) + Parameter(4) + CodedCharSetId(4) + Count(4) + StringLength(4) + Strings...
+                if (paramId === mq.MQC.MQCACF_Q_NAMES && paramType === mq.MQC.MQCFT_STRING_LIST) {
+                    const stringCount = response.readInt32BE(offset + 16);
+                    const stringLength = response.readInt32BE(offset + 20);
+
+                    this.log(`📋 Found MQCACF_Q_NAMES: ${stringCount} queue names, each ${stringLength} chars`);
+
+                    let strOffset = offset + 24; // After MQCFSL header fields
+                    for (let i = 0; i < stringCount; i++) {
+                        if (strOffset + stringLength > bytesRead) break;
+                        const name = response.toString('ascii', strOffset, strOffset + stringLength).trim();
+                        if (name.length > 0 && !name.startsWith('SYSTEM.')) {
+                            queueNames.push(name);
+                        }
+                        strOffset += stringLength;
+                    }
+                }
+
+                offset += paramLength;
+            }
+
+        } catch (error) {
+            if (error instanceof Error && 'mqrc' in error) {
+                const mqErr = error as any;
+                if (mqErr.mqrc === 2033) { // MQRC_NO_MSG_AVAILABLE
+                    this.log(`⚠️ No response received for MQCMD_INQUIRE_Q_NAMES`);
+                    return [];
+                }
+            }
+            this.log(`⚠️ Error parsing MQCMD_INQUIRE_Q_NAMES response: ${(error as Error).message}`);
+        }
+
+        return [...new Set(queueNames)];
+    }
+
+    /**
      * Build proper PCF MQCMD_INQUIRE_Q command based on IBM MQ specifications
      */
     private buildProperPCFInquireQueuesCommand(filter: string): Buffer {
         this.log(`🔧 Building proper PCF MQCMD_INQUIRE_Q command with filter: ${filter}`);
 
-        // Command: MQCMD_INQUIRE_Q (Command Code: 23)
+        // Command: MQCMD_INQUIRE_Q (Command Code: 13)
         const command = mq.MQC.MQCMD_INQUIRE_Q;
         const version = 3; // MQCFH_VERSION_3
         const type = mq.MQC.MQCFT_COMMAND; // or MQCFT_COMMAND_MANAGED_SYSTEM if available
@@ -1764,19 +1989,19 @@ export class IBMMQProvider implements IMQProvider {
         const queueFilterPadded = queueFilter.padEnd(Math.max(queueFilterLength, 4), ' '); // Ensure minimum 4 bytes
         const queueFilterStructLength = 16 + queueFilterPadded.length; // 4 fields * 4 bytes + string length
 
-        buffer.writeInt32BE(1, offset); offset += 4;              // Type: MQCFST equivalent (using 1 as placeholder)
+        buffer.writeInt32BE(mq.MQC.MQCFT_STRING, offset); offset += 4;  // Type: MQCFT_STRING (4)
         buffer.writeInt32BE(queueFilterStructLength, offset); offset += 4; // StrucLength
         buffer.writeInt32BE(mq.MQC.MQCA_Q_NAME, offset); offset += 4; // Parameter
         buffer.writeInt32BE(queueFilterPadded.length, offset); offset += 4; // StringLength
         buffer.write(queueFilterPadded, offset, queueFilterPadded.length, 'ascii'); offset += queueFilterPadded.length;
 
-        // Parameter 2: MQIA_Q_TYPE (Integer Filter Parameter - PCF Structure Type: MQCFIN)
-        buffer.writeInt32BE(3, offset); offset += 4;              // Type: MQCFIN equivalent (using 3 as placeholder)
-        buffer.writeInt32BE(16, offset); offset += 4;             // StrucLength
-        buffer.writeInt32BE(mq.MQC.MQIA_Q_TYPE, offset); offset += 4; // Parameter
-        buffer.writeInt32BE(mq.MQC.MQQT_ALL, offset); offset += 4; // Value (all queue types)
+        // Parameter 2: MQIA_Q_TYPE (MQCFIN - Integer Parameter)
+        buffer.writeInt32BE(mq.MQC.MQCFT_INTEGER, offset); offset += 4;  // Type: MQCFT_INTEGER (3)
+        buffer.writeInt32BE(16, offset); offset += 4;                     // StrucLength
+        buffer.writeInt32BE(mq.MQC.MQIA_Q_TYPE, offset); offset += 4;   // Parameter
+        buffer.writeInt32BE(mq.MQC.MQQT_ALL, offset); offset += 4;      // Value (all queue types)
 
-        // Parameter 3: MQIACF_Q_ATTRS (Integer List Parameter - PCF Structure Type: MQCFIL)
+        // Parameter 3: MQIACF_Q_ATTRS (MQCFIL - Integer List Parameter)
         const attrs = [
             mq.MQC.MQCA_Q_NAME,            // Always request the name explicitly
             mq.MQC.MQIA_Q_TYPE,            // To know the type of each queue found
@@ -1788,7 +2013,7 @@ export class IBMMQProvider implements IMQProvider {
         ];
 
         const attrStructLength = 16 + (attrs.length * 4); // Header + array
-        buffer.writeInt32BE(5, offset); offset += 4;              // Type: MQCFIL equivalent (using 5 as placeholder)
+        buffer.writeInt32BE(mq.MQC.MQCFT_INTEGER_LIST, offset); offset += 4;  // Type: MQCFT_INTEGER_LIST (5)
         buffer.writeInt32BE(attrStructLength, offset); offset += 4; // StrucLength
         buffer.writeInt32BE(mq.MQC.MQIACF_Q_ATTRS, offset); offset += 4; // Parameter
         buffer.writeInt32BE(attrs.length, offset); offset += 4;   // Count

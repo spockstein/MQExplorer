@@ -2,6 +2,17 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.16] - 2026-02-23
+
+### 🚀 Improvements
+
+#### Improved IBM MQ Queue Discovery Using MQCMD_INQUIRE_Q_NAMES
+- **New**: Queue discovery now uses `MQCMD_INQUIRE_Q_NAMES` (command code 18) as the primary PCF command, matching the approach used by Java-based MQ tools like MQAdminTool
+- **Less Restrictive**: `MQCMD_INQUIRE_Q_NAMES` only requires `+dsp` authority at the queue manager level, unlike `MQCMD_INQUIRE_Q` which requires per-queue `+dsp` authority
+- **Smarter Fallback**: Discovery chain is now: `MQCMD_INQUIRE_Q_NAMES` → `MQCMD_INQUIRE_Q` → pattern-based discovery → known queues
+- **Bug Fix**: Fixed incorrect PCF structure type values (were using placeholder integers instead of proper MQ constants)
+- **Bug Fix**: Fixed incorrect command code comment (was 23, actual is 13) in `MQCMD_INQUIRE_Q` builder
+
 ## [0.5.15] - 2026-01-06
 
 ### 🐛 Critical Bug Fixes
