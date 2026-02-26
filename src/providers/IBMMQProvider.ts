@@ -1837,34 +1837,37 @@ export class IBMMQProvider implements IMQProvider {
         const buffer = Buffer.alloc(bufferSize);
         let offset = 0;
 
-        // MQCFH (PCF Header) - 28 bytes
+        // MQCFH (PCF Header) - 36 bytes (9 fields x 4 bytes)
         buffer.writeInt32BE(type, offset); offset += 4;           // Type: MQCFT_COMMAND
-        buffer.writeInt32BE(bufferSize, offset); offset += 4;     // StrucLength (corrected at end)
-        buffer.writeInt32BE(version, offset); offset += 4;        // Version
+        buffer.writeInt32BE(36, offset); offset += 4;             // StrucLength: MQCFH is always 36 bytes
+        buffer.writeInt32BE(version, offset); offset += 4;        // Version: MQCFH_VERSION_3
         buffer.writeInt32BE(command, offset); offset += 4;        // Command: MQCMD_INQUIRE_Q_NAMES (18)
         buffer.writeInt32BE(1, offset); offset += 4;              // MsgSeqNumber
         buffer.writeInt32BE(mq.MQC.MQCFC_LAST, offset); offset += 4; // Control
+        buffer.writeInt32BE(0, offset); offset += 4;              // CompCode: MQCC_OK
+        buffer.writeInt32BE(0, offset); offset += 4;              // Reason: MQRC_NONE
         buffer.writeInt32BE(parameterCount, offset); offset += 4; // ParameterCount
 
         // Parameter 1: MQCA_Q_NAME (MQCFST - String Parameter)
+        // MQCFST: Type(4) + StrucLength(4) + Parameter(4) + CodedCharSetId(4) + StringLength(4) + String(padded to 4-byte boundary)
         const queueFilter = filter === '*' ? '*' : filter;
-        const queueFilterPadded = queueFilter.padEnd(Math.max(queueFilter.length, 4), ' ');
-        const queueFilterStructLength = 16 + queueFilterPadded.length;
+        const stringLength = queueFilter.length;
+        const paddedStringLength = Math.ceil(stringLength / 4) * 4; // Pad to 4-byte boundary
+        const mqcfstStructLength = 20 + paddedStringLength; // 5 header fields (20 bytes) + padded string
 
         buffer.writeInt32BE(mq.MQC.MQCFT_STRING, offset); offset += 4;  // Type: MQCFT_STRING (4)
-        buffer.writeInt32BE(queueFilterStructLength, offset); offset += 4; // StrucLength
+        buffer.writeInt32BE(mqcfstStructLength, offset); offset += 4;    // StrucLength
         buffer.writeInt32BE(mq.MQC.MQCA_Q_NAME, offset); offset += 4;   // Parameter
-        buffer.writeInt32BE(queueFilterPadded.length, offset); offset += 4; // StringLength
-        buffer.write(queueFilterPadded, offset, queueFilterPadded.length, 'ascii'); offset += queueFilterPadded.length;
+        buffer.writeInt32BE(0, offset); offset += 4;                     // CodedCharSetId: MQCCSI_DEFAULT (use QM default)
+        buffer.writeInt32BE(stringLength, offset); offset += 4;          // StringLength (actual, not padded)
+        buffer.write(queueFilter, offset, stringLength, 'ascii'); offset += paddedStringLength; // Write string + advance by padded length
 
         // Parameter 2: MQIA_Q_TYPE (MQCFIN - Integer Parameter)
+        // MQCFIN: Type(4) + StrucLength(4) + Parameter(4) + Value(4) = 16 bytes
         buffer.writeInt32BE(mq.MQC.MQCFT_INTEGER, offset); offset += 4;  // Type: MQCFT_INTEGER (3)
         buffer.writeInt32BE(16, offset); offset += 4;                     // StrucLength
         buffer.writeInt32BE(mq.MQC.MQIA_Q_TYPE, offset); offset += 4;   // Parameter
         buffer.writeInt32BE(mq.MQC.MQQT_ALL, offset); offset += 4;      // Value
-
-        // Correct the total structure length in the header
-        buffer.writeInt32BE(offset, 4);
 
         return buffer.subarray(0, offset);
     }
@@ -1889,19 +1892,20 @@ export class IBMMQProvider implements IMQProvider {
             // @ts-ignore - IBM MQ types are incorrect
             const bytesRead = mq.GetSync(replyQueueHandle, responseMd, gmo, responseBuffer) as number;
 
-            if (bytesRead <= 28) {
+            if (bytesRead <= 36) {
                 this.log(`⚠️ MQCMD_INQUIRE_Q_NAMES response too short (${bytesRead} bytes)`);
                 return [];
             }
 
             const response = responseBuffer.subarray(0, bytesRead);
 
-            // Parse MQCFH header (28 bytes)
+            // Parse MQCFH header (36 bytes: 9 fields x 4 bytes)
+            // Fields: Type(0), StrucLength(4), Version(8), Command(12), MsgSeqNumber(16), Control(20), CompCode(24), Reason(28), ParameterCount(32)
             const responseType = response.readInt32BE(0);
             const responseCommand = response.readInt32BE(12);
-            const completionCode = response.readInt32BE(16);
-            const reasonCode = response.readInt32BE(20);
-            const paramCount = response.readInt32BE(24);
+            const completionCode = response.readInt32BE(24);
+            const reasonCode = response.readInt32BE(28);
+            const paramCount = response.readInt32BE(32);
 
             this.log(`📋 MQCMD_INQUIRE_Q_NAMES response: type=${responseType}, command=${responseCommand}, CC=${completionCode}, RC=${reasonCode}, params=${paramCount}`);
 
@@ -1910,8 +1914,8 @@ export class IBMMQProvider implements IMQProvider {
                 return [];
             }
 
-            // Parse parameters starting after the 28-byte header
-            let offset = 28;
+            // Parse parameters starting after the 36-byte MQCFH header
+            let offset = 36;
             while (offset < bytesRead) {
                 if (offset + 16 > bytesRead) break;
 
@@ -1966,42 +1970,47 @@ export class IBMMQProvider implements IMQProvider {
         // Command: MQCMD_INQUIRE_Q (Command Code: 13)
         const command = mq.MQC.MQCMD_INQUIRE_Q;
         const version = 3; // MQCFH_VERSION_3
-        const type = mq.MQC.MQCFT_COMMAND; // or MQCFT_COMMAND_MANAGED_SYSTEM if available
+        const type = mq.MQC.MQCFT_COMMAND;
         const parameterCount = 3; // MQCA_Q_NAME, MQIA_Q_TYPE, MQIACF_Q_ATTRS
 
-        // Create buffer for PCF message
         const bufferSize = 4096;
         const buffer = Buffer.alloc(bufferSize);
         let offset = 0;
 
-        // MQCFH (PCF Header)
-        buffer.writeInt32BE(type, offset); offset += 4;           // Type
-        buffer.writeInt32BE(bufferSize, offset); offset += 4;     // StrucLength (will be corrected at end)
-        buffer.writeInt32BE(version, offset); offset += 4;        // Version
-        buffer.writeInt32BE(command, offset); offset += 4;        // Command
+        // MQCFH (PCF Header) - 36 bytes (9 fields x 4 bytes)
+        buffer.writeInt32BE(type, offset); offset += 4;           // Type: MQCFT_COMMAND
+        buffer.writeInt32BE(36, offset); offset += 4;             // StrucLength: MQCFH is always 36 bytes
+        buffer.writeInt32BE(version, offset); offset += 4;        // Version: MQCFH_VERSION_3
+        buffer.writeInt32BE(command, offset); offset += 4;        // Command: MQCMD_INQUIRE_Q (13)
         buffer.writeInt32BE(1, offset); offset += 4;              // MsgSeqNumber
         buffer.writeInt32BE(mq.MQC.MQCFC_LAST, offset); offset += 4; // Control
+        buffer.writeInt32BE(0, offset); offset += 4;              // CompCode: MQCC_OK
+        buffer.writeInt32BE(0, offset); offset += 4;              // Reason: MQRC_NONE
         buffer.writeInt32BE(parameterCount, offset); offset += 4; // ParameterCount
 
-        // Parameter 1: MQCA_Q_NAME (String Filter Parameter - PCF Structure Type: MQCFST)
+        // Parameter 1: MQCA_Q_NAME (MQCFST - String Parameter)
+        // MQCFST: Type(4) + StrucLength(4) + Parameter(4) + CodedCharSetId(4) + StringLength(4) + String(padded to 4-byte boundary)
         const queueFilter = filter === '*' ? '*' : filter;
-        const queueFilterLength = queueFilter.length;
-        const queueFilterPadded = queueFilter.padEnd(Math.max(queueFilterLength, 4), ' '); // Ensure minimum 4 bytes
-        const queueFilterStructLength = 16 + queueFilterPadded.length; // 4 fields * 4 bytes + string length
+        const stringLength = queueFilter.length;
+        const paddedStringLength = Math.ceil(stringLength / 4) * 4; // Pad to 4-byte boundary
+        const mqcfstStructLength = 20 + paddedStringLength; // 5 header fields (20 bytes) + padded string
 
         buffer.writeInt32BE(mq.MQC.MQCFT_STRING, offset); offset += 4;  // Type: MQCFT_STRING (4)
-        buffer.writeInt32BE(queueFilterStructLength, offset); offset += 4; // StrucLength
-        buffer.writeInt32BE(mq.MQC.MQCA_Q_NAME, offset); offset += 4; // Parameter
-        buffer.writeInt32BE(queueFilterPadded.length, offset); offset += 4; // StringLength
-        buffer.write(queueFilterPadded, offset, queueFilterPadded.length, 'ascii'); offset += queueFilterPadded.length;
+        buffer.writeInt32BE(mqcfstStructLength, offset); offset += 4;    // StrucLength
+        buffer.writeInt32BE(mq.MQC.MQCA_Q_NAME, offset); offset += 4;   // Parameter
+        buffer.writeInt32BE(0, offset); offset += 4;                     // CodedCharSetId: MQCCSI_DEFAULT (use QM default)
+        buffer.writeInt32BE(stringLength, offset); offset += 4;          // StringLength (actual, not padded)
+        buffer.write(queueFilter, offset, stringLength, 'ascii'); offset += paddedStringLength; // Write string + advance by padded length
 
         // Parameter 2: MQIA_Q_TYPE (MQCFIN - Integer Parameter)
+        // MQCFIN: Type(4) + StrucLength(4) + Parameter(4) + Value(4) = 16 bytes
         buffer.writeInt32BE(mq.MQC.MQCFT_INTEGER, offset); offset += 4;  // Type: MQCFT_INTEGER (3)
         buffer.writeInt32BE(16, offset); offset += 4;                     // StrucLength
         buffer.writeInt32BE(mq.MQC.MQIA_Q_TYPE, offset); offset += 4;   // Parameter
         buffer.writeInt32BE(mq.MQC.MQQT_ALL, offset); offset += 4;      // Value (all queue types)
 
         // Parameter 3: MQIACF_Q_ATTRS (MQCFIL - Integer List Parameter)
+        // MQCFIL: Type(4) + StrucLength(4) + Parameter(4) + Count(4) + Values(N*4)
         const attrs = [
             mq.MQC.MQCA_Q_NAME,            // Always request the name explicitly
             mq.MQC.MQIA_Q_TYPE,            // To know the type of each queue found
@@ -2012,19 +2021,15 @@ export class IBMMQProvider implements IMQProvider {
             mq.MQC.MQIA_OPEN_OUTPUT_COUNT  // Output handles
         ];
 
-        const attrStructLength = 16 + (attrs.length * 4); // Header + array
+        const attrStructLength = 16 + (attrs.length * 4); // Header (16 bytes) + array
         buffer.writeInt32BE(mq.MQC.MQCFT_INTEGER_LIST, offset); offset += 4;  // Type: MQCFT_INTEGER_LIST (5)
         buffer.writeInt32BE(attrStructLength, offset); offset += 4; // StrucLength
         buffer.writeInt32BE(mq.MQC.MQIACF_Q_ATTRS, offset); offset += 4; // Parameter
         buffer.writeInt32BE(attrs.length, offset); offset += 4;   // Count
 
-        // Write attribute list
         for (const attr of attrs) {
             buffer.writeInt32BE(attr, offset); offset += 4;
         }
-
-        // Correct the total structure length in the header
-        buffer.writeInt32BE(offset, 4);
 
         return buffer.subarray(0, offset);
     }
@@ -2047,7 +2052,7 @@ export class IBMMQProvider implements IMQProvider {
             // @ts-ignore - IBM MQ types are incorrect
             mq.Put(commandQueueHandle, mqmd, pmo, pcfMessage, (err: any) => {
                 if (err) {
-                    reject(new Error(`Failed to send PCF MQCMD_INQUIRE_Q: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
+                    reject(new Error(`Failed to send PCF command: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
                 } else {
                     resolve();
                 }
@@ -2119,8 +2124,8 @@ export class IBMMQProvider implements IMQProvider {
             // Simple PCF response parsing - in production you'd use proper PCF parsing library
             let offset = 0;
 
-            // Skip PCF header (28 bytes minimum)
-            offset += 28;
+            // Skip MQCFH header (36 bytes: 9 fields x 4 bytes)
+            offset += 36;
 
             const queueData: any = {};
 

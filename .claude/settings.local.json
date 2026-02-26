@@ -8,7 +8,9 @@
       "Bash(grep:*)",
       "WebFetch(domain:www.mqtechconference.com)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:www.ibm.com)"
+      "WebFetch(domain:www.ibm.com)",
+      "Bash(vsce package:*)",
+      "Bash(vsce publish:*)"
     ]
   }
 }

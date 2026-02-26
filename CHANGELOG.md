@@ -2,6 +2,17 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.17] - 2026-02-25
+
+### 🐛 Critical Bug Fix
+
+#### Fixed PCF Buffer Construction Causing MQRC_CFH_ERROR (2235)
+- **Root Cause**: The MQCFH (PCF header) was missing `CompCode` and `Reason` fields, making it 28 bytes instead of the required 36 bytes. The queue manager rejected the malformed header with MQRC_CFH_ERROR (2235)
+- **Root Cause**: The MQCFST (string parameter) was missing the `CodedCharSetId` field and string data was not padded to 4-byte boundaries as required by the PCF specification
+- **Fix**: Both `buildPCFInquireQueueNamesCommand` and `buildProperPCFInquireQueuesCommand` now produce spec-compliant PCF buffers matching IBM's official Go and Java implementations
+- **Fix**: Response parsers now correctly read the 36-byte MQCFH header (CompCode at offset 24, Reason at offset 28, ParameterCount at offset 32)
+- **Fix**: `sendProperPCFCommand` error message no longer hardcodes `MQCMD_INQUIRE_Q` — now shows generic "PCF command" since it's shared by both commands
+
 ## [0.5.16] - 2026-02-23
 
 ### 🚀 Improvements
