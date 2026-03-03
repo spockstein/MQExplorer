@@ -224,7 +224,10 @@ export class IBMMQProvider implements IMQProvider {
                     this.log(`📋 Dynamic discovery found ${queueNames.length} queues`);
                 } catch (discoveryError) {
                     const mqError = discoveryError as any;
-                    if (mqError.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
+                    if (mqError.mqrc === 2018) { // MQRC_HCONN_ERROR - stale connection
+                        this.log(`❌ Connection is stale (MQRC_HCONN_ERROR 2018) - please disconnect and reconnect`, true);
+                        throw new Error('Connection to queue manager has been lost. Please disconnect and reconnect.');
+                    } else if (mqError.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
                         this.log(`⚠️ Dynamic discovery failed due to authorization (MQRC: 2035) - consider configuring known queues for better performance`);
                         return [];
                     } else {
@@ -873,7 +876,8 @@ export class IBMMQProvider implements IMQProvider {
     }
 
     /**
-     * Open a queue with specified options - from reference implementation
+     * Open a queue with specified options - from reference implementation.
+     * Detects stale connection handles (MQRC_HCONN_ERROR 2018) and invalidates the connection.
      */
     private async openQueue(queueName: string, openOptions: number): Promise<{ hObj: mq.MQObject; name: string }> {
         return new Promise((resolve, reject) => {
@@ -884,6 +888,11 @@ export class IBMMQProvider implements IMQProvider {
             // @ts-ignore - IBM MQ types are incorrect
             mq.Open(this.connectionHandle!, od, openOptions, (err: any, hObj: mq.MQObject) => {
                 if (err) {
+                    // Detect stale connection handle - invalidate so isConnected() returns false
+                    if (err.mqrc === 2018) { // MQRC_HCONN_ERROR
+                        this.log(`❌ Connection handle is stale (MQRC_HCONN_ERROR 2018) - invalidating connection`, true);
+                        this.connectionHandle = null;
+                    }
                     reject(new Error(`Open queue '${queueName}' failed: MQCC=${err.mqcc}, MQRC=${err.mqrc}, Message=${err.message}`));
                 } else {
                     this.log(`✅ Opened queue: ${queueName}`);
@@ -1429,8 +1438,12 @@ export class IBMMQProvider implements IMQProvider {
             return discoveredQueues;
 
         } catch (error) {
+            // Propagate stale connection errors so the user gets a clear message
+            const mqError = error as any;
+            if (mqError.mqrc === 2018) { // MQRC_HCONN_ERROR
+                throw error;
+            }
             this.log(`❌ Error in dynamic queue discovery: ${(error as Error).message}`);
-            // Return empty array - no fallbacks
             return [];
         }
     }
@@ -1447,6 +1460,10 @@ export class IBMMQProvider implements IMQProvider {
         } catch (pcfError) {
             if (pcfError instanceof Error && 'mqrc' in pcfError) {
                 const mqErr = pcfError as any;
+                // Stale connection - propagate up so user gets a clear error message
+                if (mqErr.mqrc === 2018) { // MQRC_HCONN_ERROR
+                    throw pcfError;
+                }
                 if (mqErr.mqrc === 2035) { // MQRC_NOT_AUTHORIZED
                     this.log(`⚠️ No admin access for PCF commands, using alternative discovery method`);
                     return await this.discoverQueuesWithoutAdmin(filter);
@@ -1462,6 +1479,11 @@ export class IBMMQProvider implements IMQProvider {
      * then falls back to MQCMD_INQUIRE_Q if needed.
      */
     private async tryPCFDiscovery(filter: string): Promise<string[]> {
+        // Validate connection is still alive before attempting PCF commands
+        if (!this.isConnected()) {
+            throw Object.assign(new Error('Connection handle is invalid - please reconnect'), { mqrc: 2018 });
+        }
+
         // First try MQCMD_INQUIRE_Q_NAMES - requires only queue-manager-level +dsp authority
         // (same approach used by Java-based MQ tools like MQAdminTool)
         try {
@@ -1470,6 +1492,10 @@ export class IBMMQProvider implements IMQProvider {
                 return names;
             }
         } catch (namesError) {
+            // If connection went stale during the attempt, don't bother with fallback
+            if (!this.isConnected()) {
+                throw Object.assign(new Error('Connection lost during queue discovery - please reconnect'), { mqrc: 2018 });
+            }
             this.log(`⚠️ MQCMD_INQUIRE_Q_NAMES failed: ${(namesError as Error).message}, falling back to MQCMD_INQUIRE_Q`);
         }
 

@@ -2,6 +2,17 @@
 
 All notable changes to the "mqexplorer" extension will be documented in this file.
 
+## [0.5.18] - 2026-03-02
+
+### 🐛 Bug Fix
+
+#### Stale Connection Handle Detection (MQRC_HCONN_ERROR 2018)
+- **Root Cause**: After MQ server restart, the extension's cached connection handle became invalid but was still treated as connected. All PCF operations silently failed and returned empty queue lists instead of surfacing the error
+- **Fix**: `openQueue()` now detects MQRC_HCONN_ERROR (2018) and immediately invalidates the stale connection handle
+- **Fix**: `tryPCFDiscovery()` validates connection state before attempting PCF commands and aborts early if stale
+- **Fix**: HCONN errors now propagate up the entire call chain (`discoverQueuesUsingRealPCF` → `inquireQueueNames` → `listQueues`) instead of being silently swallowed as empty results
+- **User Impact**: Users now get a clear "Connection lost - please reconnect" error instead of silently seeing zero queues
+
 ## [0.5.17] - 2026-02-25
 
 ### 🐛 Critical Bug Fix
